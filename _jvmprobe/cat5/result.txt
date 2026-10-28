@@ -1,33 +1,0 @@
-REG_OK device_id=1219831033050058 iid=1219831032447962 cookie=store-region=cn-hb; store-region-src=did; install_id=1219831032447962; ttreq=1$4e164f1cd54d9dabebb0a29d790426e965d00e27
-===== GENRE short_play / default =====
-PAGE1 n=17 has_more=true next_offset=18 session=2026102722352589D675A2A80433B68EED
-SAMPLE 7700879886990199833  家书
-SAMPLE 7701324674990345241  都当他是废人，他一拳打醒全场
-SAMPLE 7701288336773614617  酒坊娘子
-DONE pages=51 total=846 (has_more=false)
-SCANNED short_play pages=51 unique=846
-===== GENRE comic_series / comic_series =====
-PAGE1 n=18 has_more=true next_offset=18 session=202610272236097A551478EC89E59DEEED
-SAMPLE 7701345289205992473  三万的承诺，三百的人生
-SAMPLE 7700561384060242968  一瓶玻璃水算了八年账
-SAMPLE 7701343743537859608  穿越六零第二季
-HIT p22 off387  7700969565689269273  诡道修仙：我把自己缝成青铜禁忌第一季  cnt=77
-DONE pages=39 total=683 (has_more=false)
-SCANNED comic_series pages=39 unique=1500
-===== GENRE ai_series / ai_series =====
-PAGE1 n=18 has_more=true next_offset=18 session=202610272236454435A21BE760F0EB52D9
-SAMPLE 7701346834786044953  晚晴归岸
-SAMPLE 7699799671937453118  执迷之祸
-SAMPLE 7700968020398591000  一井纷扰之终聚乡心
-DONE pages=49 total=864 (has_more=false)
-SCANNED ai_series pages=49 unique=2362
-===== SEARCH PATH PROBES =====
-POST /reading/distribution/search/sug/v/ -> HTTP 404 len=18 body=404 Page not found
-POST /reading/distribution/search/v/ -> HTTP 404 len=18 body=404 Page not found
-POST /reading/distribution/search/book/v/ -> HTTP 404 len=18 body=404 Page not found
-POST /novel/search/sug/v/ -> HTTP 404 len=144 body=<html> <head><title>404 Not Found</title></head> <body> <center><h1>404 Not Found</h1></center> <hr><center>TLB</center> </body> </html> 
-POST /novel/search/item/sug/v/ -> HTTP 404 len=144 body=<html> <head><title>404 Not Found</title></head> <body> <center><h1>404 Not Found</h1></center> <hr><center>TLB</center> </body> </html> 
-GET /reading/search/page/ -> HTTP 404 len=18 body=404 Page not found
-GET /reading/search/sug/ -> HTTP 404 len=18 body=404 Page not found
-GET /reading/book/search/ -> HTTP 404 len=18 body=404 Page not found
-GET /novel/search/page/ -> HTTP 404 len=144 body=<html> <head><title>404 Not Found</title></head> <body> <center><h1>404 Not Found</h1></center> <hr><center>TLB</center> </body> </html> 

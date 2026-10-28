@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 深色主题配色（对齐红果/Flutter 版） -->
+    <!-- 深色主题配色（对齐HG/Flutter 版） -->
     <color name="bg">#0D0D0D</color>
     <color name="surface">#1A1A1A</color>
     <color name="surface_light">#242424</color>

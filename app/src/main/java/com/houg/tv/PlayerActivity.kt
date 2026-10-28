@@ -341,7 +341,7 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             // ===== 解码失败自愈（有界两级升级）=====
-            // 线上日志（DWIN-380P / 华为 Android 12）：红果下发的 1080p 变体是
+            // 线上日志（DWIN-380P / 华为 Android 12）：HG下发的 1080p 变体是
             // bytevc1(HEVC)，该机 HEVC 硬解初始化失败 → 黑屏。
             // videoModel 已优先给「探测不支持 HEVC」的设备选 H.264，但仍兜不住两点：
             // ① 探测误判（ROM 谎报支持）；② 片源只有 HEVC 一档。

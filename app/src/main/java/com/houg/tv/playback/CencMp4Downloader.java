@@ -9,7 +9,7 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 /**
- * 下载红果加密 mp4（带 App UA 与固定 Referer），失败按 urls 列表依次重试。
+ * 下载HG加密 mp4（带 App UA 与固定 Referer），失败按 urls 列表依次重试。
  */
 public final class CencMp4Downloader {
 
@@ -28,10 +28,10 @@ public final class CencMp4Downloader {
                 .header("Accept", "*/*");
         try (Response resp = client.newCall(rb.build()).execute()) {
             if (!resp.isSuccessful()) {
-                throw new Exception("红果媒体下载 HTTP " + resp.code());
+                throw new Exception("HG媒体下载 HTTP " + resp.code());
             }
             if (resp.body() == null) {
-                throw new Exception("红果媒体下载无响应体");
+                throw new Exception("HG媒体下载无响应体");
             }
             return resp.body().bytes();
         }
@@ -47,6 +47,6 @@ public final class CencMp4Downloader {
                 last = e;
             }
         }
-        throw last != null ? last : new Exception("红果媒体下载失败");
+        throw last != null ? last : new Exception("HG媒体下载失败");
     }
 }

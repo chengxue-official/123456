@@ -86,7 +86,7 @@ public final class MediaCrypto {
 
     // ---------------------------------------------------------------- 基础工具
 
-    /** 红果 key_seed / spade_a 的 URL-safe Base64 解码（-_ 归一为 +/），供 NetClient 解 key_seed 用。 */
+    /** HG key_seed / spade_a 的 URL-safe Base64 解码（-_ 归一为 +/），供 NetClient 解 key_seed 用。 */
     public static byte[] decode64(String s) {
         return B64.decode(s.replace('-', '+').replace('_', '/'));
     }

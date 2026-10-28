@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.houg.tv"
-        // 适配 Android 5.0（API 21）及以上：红果片源为 HEVC+CENC，需 API 21 起的 HEVC 硬解能力
+        // 适配 Android 5.0（API 21）及以上：HG片源为 HEVC+CENC，需 API 21 起的 HEVC 硬解能力
         minSdk = 21
         targetSdk = 35
         versionCode = 126
@@ -54,7 +54,7 @@ dependencies {
     implementation("com.github.bumptech.glide:glide:4.12.0")
     annotationProcessor("com.github.bumptech.glide:compiler:4.12.0")
 
-    // HEIC/HEIF 封面解码（红果封面为 HEIC 格式，基于 libheif/libde265）
+    // HEIC/HEIF 封面解码（HG封面为 HEIC 格式，基于 libheif/libde265）
     // 排除 debug 变体：该库同时发布 release/debug AAR 造成重复类
     implementation("com.github.msisuzney:GlideHeifDecoder:0.5") {
         exclude(group = "com.github.msisuzney.GlideHeifDecoder", module = "heifdecoder-debug")

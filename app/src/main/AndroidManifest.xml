@@ -15,7 +15,7 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <application
-        android:name="com.houg.tv.DuanjuApplication"
+        android:name="com.houg.tv.TvApplication"
         android:allowBackup="false"
         android:extractNativeLibs="true"
         android:usesCleartextTraffic="true"

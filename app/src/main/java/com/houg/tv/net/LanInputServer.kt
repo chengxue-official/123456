@@ -421,7 +421,7 @@ class LanInputServer(
     private fun errorPage(message: String): String = """<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>红果TV 远程输入</title>
+<title>HGTV 远程输入</title>
 <style>body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#141414;color:#eee;padding:22px}h1{font-size:19px}p{color:#9a9a9a;font-size:14px}a{color:#e53935}</style>
 </head><body><h1>$message</h1><p><a href="/">返回</a></p></body></html>"""
 
@@ -438,7 +438,7 @@ class LanInputServer(
 <html lang="zh-CN"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>红果TV 远程输入</title>
+<title>HGTV 远程输入</title>
 <style>
  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
       background:#141414;color:#eee;padding:22px;box-sizing:border-box}
@@ -451,7 +451,7 @@ class LanInputServer(
  button:active{background:#c62828}
  #tip{margin-top:16px;font-size:14px;color:#5ac85a;min-height:20px;text-align:center}
 </style></head><body>
-<h1>红果TV 远程输入</h1>
+<h1>HGTV 远程输入</h1>
 <p>在下面输入要搜索的剧名，点「发送到电视」。电视上会立即开始搜索；关掉本页 10 分钟内重开仍可续写。</p>
 <form method="post" action="/submit?sid=$sessionId" onsubmit="return send(event)">
 <input id="kw" name="kw" type="search" placeholder="输入剧名…" autocomplete="off" autofocus>
@@ -528,7 +528,7 @@ class LanInputServer(
     private fun doneHtml(): String = """<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>红果TV 远程输入</title>
+<title>HGTV 远程输入</title>
 <style>body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
  background:#141414;color:#eee;padding:22px;box-sizing:border-box}
  h1{font-size:19px;margin:0 0 6px}p{color:#9a9a9a;font-size:14px;line-height:1.6}

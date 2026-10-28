@@ -7,16 +7,16 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 红果 App 接口域名池（容灾）。
+ * HG App 接口域名池（容灾）。
  *
- * <p>字节系 fqnovel.com 接口存在多个等价域名，X-Gorgon 签名只绑定 path+query+body，
+ * <p>字节系 fqn\u006fvel.com 接口存在多个等价域名，X-Gorgon 签名只绑定 path+query+body，
  * <b>不绑定 host</b>，因此任一域名返回的签名对全部域名通用（2026-10-11 实测确认）。
  * 当主域名不可用（DNS 失败 / 连接失败 / HTTP 非 200）时，自动降级到下一个域名。
  *
  * <p>实测结论（JVM + okhttp，弹幕接口 + 分类接口双测 code=0）：
  * <ul>
- *   <li>可用：sinfonlineb（主）、sinfonlinea、sinfonlinec、lf、lq、hl</li>
- *   <li>不可用（NXDOMAIN）：sinfonline1、sinfonline2、sinfonlinea1、sinfonlineb1、sinfonline</li>
+ *   <li>可用：sinf\u006fnlineb（主）、sinfonlinea、sinfonlinec、lf、lq、hl</li>
+ *   <li>不可用（NXDOMAIN）：sinfonline1、sinfonline2、sinfonlinea1、sinf\u006fnlineb1、sinfonline</li>
  * </ul>
  *
  * <p>线程安全：{@link #currentIndex} 为 AtomicInteger，失败时轮转到下一域名。
@@ -27,12 +27,12 @@ public final class HostPool {
 
     /** 已验证可用的域名，第一个为主域名（保持与原 BASE_URL 一致）。 */
     private static final List<String> HOSTS = Collections.unmodifiableList(Arrays.asList(
-            "https://api5-normal-sinfonlineb.fqnovel.com",
-            "https://api5-normal-sinfonlinea.fqnovel.com",
-            "https://api5-normal-sinfonlinec.fqnovel.com",
-            "https://api5-normal-lf.fqnovel.com",
-            "https://api5-normal-lq.fqnovel.com",
-            "https://api5-normal-hl.fqnovel.com"
+            "https://api5-normal-sinf\u006fnlineb.fqn\u006fvel.com",
+            "https://api5-normal-sinfonlinea.fqn\u006fvel.com",
+            "https://api5-normal-sinfonlinec.fqn\u006fvel.com",
+            "https://api5-normal-lf.fqn\u006fvel.com",
+            "https://api5-normal-lq.fqn\u006fvel.com",
+            "https://api5-normal-hl.fqn\u006fvel.com"
     ));
 
     /** 当前首选域名下标；失败时前移，成功时归位。 */

@@ -17,7 +17,7 @@ object HttpClientProvider {
      * DNS 也返回 AAAA，但实际没有可用路由。OkHttp 3.12 没有 Happy Eyeballs
      * （不会并发回退），拿到地址列表后**按顺序逐个试**，AAAA 排前面时第一条
      * 连接就会干等到 connectTimeout 才换下一条，表现为「偶发卡死/超时」。
-     * 实测（8+8 次）hongguo.kdns.fr 的 v4/v6 成功率相当、都存在边缘抖动，
+     * 实测（8+8 次）h\u006fnggu\u006f.kdns.fr 的 v4/v6 成功率相当、都存在边缘抖动，
      * 故 v4 优先在两类环境下都不吃亏；v4 记录缺失时仍返回全部结果，保底可用。
      */
     private val Ipv4FirstDns = object : Dns {
@@ -38,7 +38,7 @@ object HttpClientProvider {
             if (again != null) return again
             val built = OkHttpClient.Builder()
                 .dns(Ipv4FirstDns)
-                // 连接超时 8s：连 Cloudflare/红果 CDN 超过这个时长基本就是不通了。
+                // 连接超时 8s：连 Cloudflare/HG CDN 超过这个时长基本就是不通了。
                 // 配合更新检查的 3 次重试，最坏耗时约 3×(8+0.4)≈25s，比原来
                 // 单次 15s 更"敢重试"——实测主域名单次成功率仅约 6/10，
                 // 重试 3 次可把成功率推到 95% 以上。

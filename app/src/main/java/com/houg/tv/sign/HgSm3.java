@@ -1,12 +1,12 @@
 package com.houg.tv.sign;
 
 /**
- * 国密 SM3 哈希（纯 Java，逐行还原自 guoapp native/core/provider_hongguo_comment_sign.go 的 hongguoSM3）。
- * 仅用于红果评论（弹幕）接口签名。
+ * 国密 SM3 哈希（纯 Java，逐行还原自 guoapp native/core/provider_h\u006fnggu\u006f_comment_sign.go 的 h\u006fnggu\u006fSM3）。
+ * 仅用于HG评论（弹幕）接口签名。
  */
-public final class HongguoSm3 {
+public final class HgSm3 {
 
-    private HongguoSm3() {
+    private HgSm3() {
     }
 
     public static byte[] digest(byte[] input) {

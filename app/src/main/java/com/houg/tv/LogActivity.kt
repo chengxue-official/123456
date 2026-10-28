@@ -280,7 +280,7 @@ class LogActivity : AppCompatActivity() {
     private fun shareAsFile(report: String) {
         try {
             val dir = File(cacheDir, "logs").apply { mkdirs() }
-            val file = File(dir, "hougtime-log.txt")
+            val file = File(dir, "app-log.txt")
             file.writeText(report)
             val uri = FileProvider.getUriForFile(
                 this, packageName + ".fileprovider", file

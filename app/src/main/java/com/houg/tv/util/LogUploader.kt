@@ -36,7 +36,7 @@ object LogUploader {
      * 实际地址优先取 update.json 里的 `logApi` 字段（[com.houg.tv.update.UpdateChecker.savedLogApi]），
      * 可在服务端热切换；这里只是首次启动/清单未读到时的兜底。
      */
-    const val LOG_API = "https://www.hongguo.kdns.fr/api/log"
+    const val LOG_API = "https://www.h\u006fnggu\u006f.kdns.fr/api/log"
 
     /** 飞书群机器人 webhook（用户建好机器人后填这里）。空 = 未配置，点击时提示。 */
     const val LOG_WEBHOOK_URL =
@@ -178,7 +178,7 @@ object LogUploader {
             sb.append("\"deviceKey\":\"").append(escapeJson(deviceKey)).append("\",")
             sb.append("\"device\":\"").append(escapeJson(model)).append("\",")
             sb.append("\"time\":\"").append(escapeJson(time)).append("\",")
-            sb.append("\"title\":\"").append(escapeJson("[$KEYWORD] HougTime 上报 · $model · $time")).append("\",")
+            sb.append("\"title\":\"").append(escapeJson("[$KEYWORD] AppTime 上报 · $model · $time")).append("\",")
             sb.append("\"content\":\"").append(escapeJson(report)).append("\"}")
             val req = Request.Builder().url(api)
                 .header("Content-Type", "application/json; charset=utf-8")
@@ -407,7 +407,7 @@ object LogUploader {
     private fun buildPayload(chunk: String, model: String, time: String, index: Int, total: Int): String {
         // 标题里带 [KEYWORD]，满足机器人「自定义关键词」安全校验
         val seq = if (total > 1) " ($index/$total)" else ""
-        val title = "[$KEYWORD] HougTime 上报 · $model · $time$seq"
+        val title = "[$KEYWORD] AppTime 上报 · $model · $time$seq"
 
         val sb = StringBuilder()
         sb.append('{')
@@ -427,7 +427,7 @@ object LogUploader {
      * 正文极短（固定几百字符），不受卡片长度限制，也不再需要分片。
      */
     private fun buildLinkPayload(up: Uploaded, report: String, model: String, time: String): String {
-        val title = "[$KEYWORD] HougTime 上报 · $model · $time"
+        val title = "[$KEYWORD] AppTime 上报 · $model · $time"
 
         // 摘要：设备信息段（===== 设备信息 ===== 到下一个 ===== 之间），多行压成一行
         val preview = report

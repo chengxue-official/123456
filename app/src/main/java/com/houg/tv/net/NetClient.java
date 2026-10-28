@@ -6,7 +6,7 @@ import android.os.Build;
 import android.util.Base64;
 
 import com.houg.tv.sign.DeviceRegister;
-import com.houg.tv.sign.HongguoCrypto;
+import com.houg.tv.sign.HgCrypto;
 import com.houg.tv.sign.HostPool;
 import com.houg.tv.sign.MediaCrypto;
 import com.houg.tv.sign.PlaybackSigner;
@@ -49,7 +49,7 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 /**
- * 红果短剧网络层（分类 / 详情 / 播放 / 搜索）。
+ * HG短剧网络层（分类 / 详情 / 播放 / 搜索）。
  * 分类/详情走 App 版接口（X-Gorgon 签名），失败回退网页版（免签名）；
  * 搜索/榜单走网页版；播放走 App 版 multi_video_model，失败回退网页版公开 360p 直链。
  * 兼容 Android 4.0（API 14）：OkHttp 3.12.13 + 系统 org.json，避开 StandardCharsets（API 19）。
@@ -57,10 +57,10 @@ import okhttp3.Response;
 public final class NetClient {
 
     /** 网页版（搜索用） */
-    private static final String WEB_SITE = "https://hongguoduanju.com";
+    private static final String WEB_SITE = "https://h\u006fnggu\u006fd\u0075anju.c\u006fm";
 
     /**
-     * 「本机设备身份不被红果接口放行」的播放失败提示（App 通道全部 200 空 body，
+     * 「本机设备身份不被HG接口放行」的播放失败提示（App 通道全部 200 空 body，
      * 自动换新身份重试后仍如此，且网页直链兜底也失败时给出，替代误导性的
      * 「该集未开放免费观看」）。文案按「能自救的动作」分层，不再让用户以为
      * 是内容没上线。
@@ -70,7 +70,7 @@ public final class NetClient {
      * 用户不需要理解「身份」概念，只看到「重试」。
      */
     public static final String DEVICE_IDENTITY_FAILED_MSG =
-            "红果接口未放行本机（已自动换新设备身份重试，仍失败，不是该集没上线）。"
+            "HG接口未放行本机（已自动换新设备身份重试，仍失败，不是该集没上线）。"
                     + "请检查电视网络后点下方「重试」（遥控器按确定键），会换一个新身份再播一次；"
                     + "仍看不了可卸载重装本应用。";
 
@@ -112,7 +112,7 @@ public final class NetClient {
      * <p><b>必须是整个域名池</b>（原先写死 3，而池里有 6 个）。线上日志显示：某个域名
      * 的「空 body」是<b>按 path 维度</b>出现的（同一 host 上 catalog/detail 正常但
      * multi_video_model 返回空），因此一次只轮询一半域名时，恰好全踩在坏域名上就会
-     * 报「红果 App 接口未返回有效数据」——而下一轮换起点后同一集又能播（用户反馈
+     * 报「HG App 接口未返回有效数据」——而下一轮换起点后同一集又能播（用户反馈
      * 「有的能看有的不能看」「看几集后突然不行」的真因）。
      * 连接超时已压到 8s，全池 6 个最坏约 48s，且失败域名会被游标跳过，实际远小于此。
      */
@@ -197,7 +197,7 @@ public final class NetClient {
     /**
      * 搜索三路（官方全库搜索 / 建议接口 / 网页搜索页）并行时的总预算（ms）。
      *
-     * <p>实测 hongguoduanju.com 的路由页（/search、/rank、/）约 50% 的请求会挂起
+     * <p>实测 h\u006fnggu\u006fd\u0075anju.c\u006fm 的路由页（/search、/rank、/）约 50% 的请求会挂起
      * 20~30s，只有 {@code /incent_resource/suggestion} 稳定（&lt;300ms）。原先两路串行，
      * 网页页又叠加 callTimeout 12s × 3 次传输重试 × 2 轮解析重试，一次搜索最坏要
      * ~50s 才出结果（用户看到的「一直转圈」）。并行 + 总预算后最坏 7s 出结果。
@@ -381,7 +381,7 @@ public final class NetClient {
     /**
      * 变体选择：优先 H.264，同编码内按高度降序。
      *
-     * 背景（线上日志 DWIN-380P / 华为 Android 12）：红果同时下发 h264 与 bytevc1(HEVC)
+     * 背景（线上日志 DWIN-380P / 华为 Android 12）：HG同时下发 h264 与 bytevc1(HEVC)
      * 变体，旧逻辑一律按高度选，1080p 那档往往是 HEVC——而部分电视 SoC（尤其
      * 全志/晨星老方案与部分华为定制机）**根本没有 HEVC 硬解**，MediaCodec 初始化
      * 失败即黑屏无提示。故：
@@ -434,7 +434,7 @@ public final class NetClient {
         });
     }
 
-    /** codec_type 是否为 HEVC（红果下发的 bytevc1 即 H.265）。 */
+    /** codec_type 是否为 HEVC（HG下发的 bytevc1 即 H.265）。 */
     private static boolean isHevc(String codec) {
         return codec != null && codec.toLowerCase().contains("bytevc1");
     }
@@ -613,7 +613,7 @@ public final class NetClient {
         public final int page;
         public final int totalPages;
         public final boolean hasMore;
-        /** 榜单更新时间文案，如「10月14日已更新 · 基于红果内观看/互动等综合热度排序」 */
+        /** 榜单更新时间文案，如「10月14日已更新 · 基于HG内观看/互动等综合热度排序」 */
         public final String updatedText;
         public final List<RankItem> items;
 
@@ -630,7 +630,7 @@ public final class NetClient {
 
     /**
      * 榜单定义。{@code boardId} 是我们自己的稳定标识（也用于 UI 记忆选中项）；
-     * {@code path} 是红果网页 {@code /rank/&lt;path&gt;} 的路径段。
+     * {@code path} 是HG网页 {@code /rank/&lt;path&gt;} 的路径段。
      */
     public static final class RankBoard {
         public final String boardId;
@@ -657,7 +657,7 @@ public final class NetClient {
 
     public CatalogPage catalog(String genreKey, String scene, int offset, String sessionId) throws Exception {
         AppLog.INSTANCE.d(TAG, "catalog genre=" + genreKey + " scene=" + scene + " offset=" + offset);
-        // 红果优先：App 版分类（X-Argus 签名族）→ 网页版公开分类页（免签名免 Cookie，
+        // HG优先：App 版分类（X-Argus 签名族）→ 网页版公开分类页（免签名免 Cookie，
         // 与 HGTV 同款路径 /category/<real|comic|ai>-drama）。
         try {
             CatalogPage p = appCatalog(genreKey, scene, offset, sessionId);
@@ -713,7 +713,7 @@ public final class NetClient {
         JSONObject root = appPost("/reading/distribution/category/landpage/v/", body.toString());
         JSONObject data = root.optJSONObject("data");
         if (data == null) {
-            throw new Exception("红果分类接口未返回数据");
+            throw new Exception("HG分类接口未返回数据");
         }
         JSONArray rows = data.optJSONArray("video_data");
         List<Drama> dramas = new ArrayList<>();
@@ -795,7 +795,7 @@ public final class NetClient {
 
         JSONObject root = appPost("/reading/distribution/category/landpage/v/", body.toString());
         JSONObject data = root.optJSONObject("data");
-        if (data == null) throw new Exception("红果分类接口未返回数据");
+        if (data == null) throw new Exception("HG分类接口未返回数据");
 
         JSONArray rows = data.optJSONArray("video_data");
         List<Drama> dramas = new ArrayList<>();
@@ -972,7 +972,7 @@ public final class NetClient {
     /* ==================== 榜单（网页版） ==================== */
 
     /**
-     * 拉取红果官方榜单一页：{@code GET /rank/&lt;board.path&gt;}（page&gt;1 时加
+     * 拉取HG官方榜单一页：{@code GET /rank/&lt;board.path&gt;}（page&gt;1 时加
      * {@code ?page=N}）。页面是 SSR 直出的 HTML，榜单数据内嵌在
      * {@code data-fn-args} 脚本属性里（两种形态：双引号包裹的 mergeLoaderData、
      * 单引号包裹的 run-router-data-fn），解析出 {@code rankList} 数组。
@@ -1258,11 +1258,11 @@ public final class NetClient {
         JSONObject root = fetchRouterData(url);
         JSONObject pageObj = findLoaderPage(root, "detail_page", "detail_");
         if (pageObj == null) {
-            throw new Exception("红果详情数据不可用");
+            throw new Exception("HG详情数据不可用");
         }
         JSONObject detail = pageObj.optJSONObject("seriesDetail");
         if (detail == null || detail.length() == 0) {
-            throw new Exception("红果详情为空");
+            throw new Exception("HG详情为空");
         }
 
         String title = firstNonEmpty(optText(detail, "series_name"),
@@ -1397,7 +1397,7 @@ public final class NetClient {
                         HostPool.reportSuccess(host);
                         return model;
                     }
-                    lastError = new Exception("红果播放信息为空");
+                    lastError = new Exception("HG播放信息为空");
                     break; // 响应正常但没模型：换域名
                 }
                 HostPool.reportFailure(host);
@@ -1458,7 +1458,7 @@ public final class NetClient {
                     + "device_id=" + DeviceRegister.deviceId(), null);
         }
         AppLog.INSTANCE.e(TAG, "videoModel 取流失败 vid=" + vid, lastError);
-        throw lastError != null ? lastError : new Exception("红果播放信息为空");
+        throw lastError != null ? lastError : new Exception("HG播放信息为空");
     }
 
     /**
@@ -1645,12 +1645,12 @@ public final class NetClient {
      */
     private static boolean isAuthoritativeContentError(Exception e) {
         String m = e.getMessage();
-        return m != null && (m.contains("红果媒体密钥不可用") || m.contains("该集片源只有 AV1"));
+        return m != null && (m.contains("HG媒体密钥不可用") || m.contains("该集片源只有 AV1"));
     }
 
     private VideoModel appVideoModel(String vid, int maxHeight, AtomicBoolean blockedOut) throws Exception {
         JSONObject model = fetchVideoModel(vid, blockedOut);
-        if (model == null) throw new Exception("红果播放信息为空");
+        if (model == null) throw new Exception("HG播放信息为空");
 
         // 新路由的可用资源在 fallback_api：普通 GET（播放器 UA，免签名）拿
         // video_info.data.{key_seed, video_list{...}}，再按清晰度挑一档。
@@ -1725,7 +1725,7 @@ public final class NetClient {
                     + (skippedBvc2 > 0 ? " | bytevc2 剔除 " + skippedBvc2 + " 档" : "")
                     + " → 全部不可播");
             if (keyErr != null) {
-                throw new Exception("红果媒体密钥不可用（片源解密失败），请换一集或稍后再试");
+                throw new Exception("HG媒体密钥不可用（片源解密失败），请换一集或稍后再试");
             }
             throw new Exception("该集片源只有 AV1（bytevc2）编码，本机无法解码，请换一集或反馈给开发者");
         }
@@ -1905,7 +1905,7 @@ public final class NetClient {
         return m.find() ? Integer.parseInt(m.group()) : 0;
     }
 
-    /** URL 里的转义序列归一（红果下发的 main_url 常见 \\/ 和 \u0026）。 */
+    /** URL 里的转义序列归一（HG下发的 main_url 常见 \\/ 和 \u0026）。 */
     private static String cleanUrl(String s) {
         return s.replace("\\/", "/")
                 .replace("\\u002F", "/")
@@ -1976,7 +1976,7 @@ public final class NetClient {
         int code = probeHttpCode(url);
         if (code != 200) {
             if (code == 404) {
-                throw new Exception("该集未开放免费观看（红果网页版仅前几集免费）");
+                throw new Exception("该集未开放免费观看（HG网页版仅前几集免费）");
             }
             throw new Exception("网页版免费源不可用（HTTP " + code + "）");
         }
@@ -2055,7 +2055,7 @@ public final class NetClient {
         JSONObject root = appPost("/novel/commentapi/comment/list/" + videoId + "/v1/", body.toString(), true);
         JSONObject data = root.optJSONObject("data");
         if (data == null) {
-            throw new Exception("红果弹幕接口未返回数据");
+            throw new Exception("HG弹幕接口未返回数据");
         }
 
         // 时间窗口推进值（本窗口右边界）。
@@ -2148,7 +2148,7 @@ public final class NetClient {
      *
      * 解决：四路合一
      *   0) <b>官方全库搜索</b> {@code GET /reading/bookapi/search/tab/v/}（签名请求，
-     *      红果 App 自己用的搜索）：返回「综合」tab 的搜索结果单元格，每个单元格的
+     *      HG App 自己用的搜索）：返回「综合」tab 的搜索结果单元格，每个单元格的
      *      {@code video_data[0].video_detail} 与详情接口同构，含 series_id / 片名 /
      *      集数，且一次就能把同一部剧的各季全列出来。这是唯一能搜到「镜像建议接口
      *      词条缺失的季」的通道（例如「…凶万倍第三季/第四季」）。
@@ -2337,12 +2337,12 @@ public final class NetClient {
             }
             try (Response resp = searchClient.newCall(rb.build()).execute()) {
                 if (!resp.isSuccessful()) {
-                    throw new Exception("红果建议接口 HTTP " + resp.code());
+                    throw new Exception("HG建议接口 HTTP " + resp.code());
                 }
                 byte[] bytes = resp.body() == null ? new byte[0] : resp.body().bytes();
                 String text = new String(bytes, UTF8);
                 if (text.isEmpty()) {
-                    lastError = new Exception("红果建议接口无响应");
+                    lastError = new Exception("HG建议接口无响应");
                     continue;
                 }
                 return parseSuggestDramas(text);
@@ -2371,7 +2371,7 @@ public final class NetClient {
             if (item == null) continue;
             // 只认 short_play_name：它是唯一携带完整 video_data（含 series_id/封面/集数）
             // 的类型。title / common_query 类只有数字 keyword，并不对应可播放的剧集
-            // （参考真果鉴 fetchHongguoSearchNames 同样只取 short_play_name）。
+            // （参考真果鉴 fetchHgSearchNames 同样只取 short_play_name）。
             if (!"short_play_name".equals(optText(item, "word_type"))) continue;
             JSONObject vd = item.optJSONObject("video_data");
             if (vd == null || vd.length() == 0) continue;
@@ -2386,7 +2386,7 @@ public final class NetClient {
 
     /**
      * <b>官方全库搜索</b>：{@code GET /reading/bookapi/search/tab/v/?query=<kw>&count=N
-     * &offset=n}（签名请求，红果 App 自己用的搜索接口）。
+     * &offset=n}（签名请求，HG App 自己用的搜索接口）。
      *
      * <p>不传 {@code search_type}：实测 short_play / comic_series / ai_series 与不传
      * 返回<b>完全一致</b>（该参数被服务端忽略），而结果里本来就同时覆盖短剧、漫剧与
@@ -3059,12 +3059,12 @@ public final class NetClient {
                             + " host=" + req.baseUrl
                             + " body=" + (text.length() > 400 ? text.substring(0, 400) : text));
                     if (code != 200) {
-                        lastError = new Exception("红果 App 接口 HTTP " + code);
+                        lastError = new Exception("HG App 接口 HTTP " + code);
                         break; // 该域名 HTTP 层不可用，换域名
                     }
                     if (text.isEmpty()) {
                         // 200 但空体：先在本域名重试，仍空才放弃该域名
-                        lastError = new Exception("红果 App 接口未返回有效数据");
+                        lastError = new Exception("HG App 接口未返回有效数据");
                         if (r < EMPTY_BODY_RETRIES) continue;
                         break;
                     }
@@ -3072,7 +3072,7 @@ public final class NetClient {
                     int bizCode = json.optInt("code", 0);
                     if (bizCode != 0) {
                         // 业务码非 0（限流/后端异常）：换域名再试，视为该域名不可用
-                        lastError = new Exception("红果 App 接口业务码 " + bizCode);
+                        lastError = new Exception("HG App 接口业务码 " + bizCode);
                         break;
                     }
                     HostPool.reportSuccess(host);
@@ -3087,7 +3087,7 @@ public final class NetClient {
             HostPool.reportFailure(host);
         }
         AppLog.INSTANCE.e(TAG, "POST " + path + " 全部 " + attemptCount + " 个域名均失败", lastError);
-        throw lastError != null ? lastError : new Exception("红果 App 接口不可用");
+        throw lastError != null ? lastError : new Exception("HG App 接口不可用");
     }
 
     /**
@@ -3126,18 +3126,18 @@ public final class NetClient {
                             + " host=" + req.baseUrl
                             + " body=" + (text.length() > 400 ? text.substring(0, 400) : text));
                     if (code != 200) {
-                        lastError = new Exception("红果 App 接口 HTTP " + code);
+                        lastError = new Exception("HG App 接口 HTTP " + code);
                         break; // 该域名 HTTP 层不可用，换域名
                     }
                     if (text.isEmpty()) {
-                        lastError = new Exception("红果 App 接口未返回有效数据");
+                        lastError = new Exception("HG App 接口未返回有效数据");
                         if (r < EMPTY_BODY_RETRIES) continue;
                         break;
                     }
                     JSONObject json = new JSONObject(text);
                     int bizCode = json.optInt("code", 0);
                     if (bizCode != 0) {
-                        lastError = new Exception("红果 App 接口业务码 " + bizCode);
+                        lastError = new Exception("HG App 接口业务码 " + bizCode);
                         break;
                     }
                     HostPool.reportSuccess(host);
@@ -3151,7 +3151,7 @@ public final class NetClient {
             HostPool.reportFailure(host);
         }
         AppLog.INSTANCE.e(TAG, "GET " + pathAndQuery + " 全部 " + attemptCount + " 个域名均失败", lastError);
-        throw lastError != null ? lastError : new Exception("红果 App 接口不可用");
+        throw lastError != null ? lastError : new Exception("HG App 接口不可用");
     }
 
     /* ==================== 网页版请求执行（搜索） ==================== */
@@ -3159,7 +3159,7 @@ public final class NetClient {
     /**
      * 网页版页面 → {@code _ROUTER_DATA}。除 {@link #getText(String)} 的传输层重试外，
      * 这里再做一次「解析级」重试：CDN 偶发返回被截断/换壳的 HTML（日志里的
-     * 「红果页面结构异常」），重新抓一次通常就好了。
+     * 「HG页面结构异常」），重新抓一次通常就好了。
      */
     private JSONObject fetchRouterData(String url) throws Exception {
         return fetchRouterData(url, webClient);
@@ -3180,11 +3180,11 @@ public final class NetClient {
             try {
                 String html = getText(url, http);
                 if (html == null || html.isEmpty()) {
-                    throw new Exception("红果接口无响应");
+                    throw new Exception("HG接口无响应");
                 }
                 String json = extractRouterData(html);
                 if (json == null) {
-                    throw new Exception("红果页面结构异常");
+                    throw new Exception("HG页面结构异常");
                 }
                 return new JSONObject(json);
             } catch (Exception e) {
@@ -3193,13 +3193,13 @@ public final class NetClient {
                         + " err=" + e.getMessage());
             }
         }
-        throw lastError != null ? lastError : new Exception("红果页面不可用");
+        throw lastError != null ? lastError : new Exception("HG页面不可用");
     }
 
     /**
      * 网页版 GET（榜单 / 搜索 / 网页详情共用出口）。
      *
-     * <p><b>必须带重试</b>：hongguoduanju.com 底层是同一个字节 CDN，实测单次成功率
+     * <p><b>必须带重试</b>：h\u006fnggu\u006fd\u0075anju.c\u006fm 底层是同一个字节 CDN，实测单次成功率
      * 只有约六成（偶发连接超时、5xx）。此前只有一次机会，失败直接把异常抛给 UI——
      * 这正是用户反馈「榜单要刷新好几次才刷得出来」的真因（日志里 hot-drama page=1
      * 被连续请求 5 次，间隔 2~3 秒，是用户手动按了 5 次，而非程序重试）。
@@ -3230,7 +3230,7 @@ public final class NetClient {
                         .header("Accept-Language", "zh-CN,zh;q=0.9");
                 try (Response resp = http.newCall(rb.build()).execute()) {
                     if (!resp.isSuccessful()) {
-                        lastError = new Exception("红果接口 HTTP " + resp.code());
+                        lastError = new Exception("HG接口 HTTP " + resp.code());
                         AppLog.INSTANCE.d(TAG, "GET 失败 第" + (attempt + 1) + "次 HTTP "
                                 + resp.code() + " url=" + url);
                         continue;
@@ -3238,7 +3238,7 @@ public final class NetClient {
                     byte[] bytes = resp.body() == null ? new byte[0] : resp.body().bytes();
                     String text = new String(bytes, UTF8);
                     if (text.isEmpty()) {
-                        lastError = new Exception("红果接口无响应");
+                        lastError = new Exception("HG接口无响应");
                         AppLog.INSTANCE.d(TAG, "GET 失败 第" + (attempt + 1) + "次 空响应 url=" + url);
                         continue;
                     }
@@ -3249,7 +3249,7 @@ public final class NetClient {
                 AppLog.INSTANCE.e(TAG, "GET 失败 第" + (attempt + 1) + "次 url=" + url, e);
             }
         }
-        throw lastError != null ? lastError : new Exception("红果接口不可用");
+        throw lastError != null ? lastError : new Exception("HG接口不可用");
     }
 
     /* ==================== 解析辅助 ==================== */

@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 红果播放接口签名栈（x-gorgon / x-helios / x-medusa）。
+ * HG播放接口签名栈（x-gorgon / x-helios / x-medusa）。
  *
  * <p>思路来自 HGTV（GPL-3.0）的 drpys 还原结果，这里是手写 Java 重实现，逐处对齐其运算语义：
  * <ul>
@@ -228,7 +228,7 @@ public final class PlaybackSigner {
     }
 
     private static byte[] sm3(byte[] v) {
-        return HongguoSm3.digest(v);
+        return HgSm3.digest(v);
     }
 
     private static byte[] concat(byte[]... parts) {

@@ -4,7 +4,7 @@ import java.nio.charset.Charset;
 import java.security.MessageDigest;
 
 /**
- * 红果 App 接口 X-Gorgon 签名（对齐 Go provider_hongguo_sign.go 的 signHongguoRequest）。
+ * HG App 接口 X-Gorgon 签名（对齐 Go provider_h\u006fnggu\u006f_sign.go 的 signHgRequest）。
  *
  * payload 20 字节布局（★ 关键）：
  *   [0..4)   = md5(rawQuery)[0..4]

@@ -15,4 +15,18 @@ _jvmprobe/outkotlin/
 _sample_*.mp4
 _qa_verify_out.mp4
 build_log.txt
-!hongguo-*.apk
+*.log
+
+# 本地调试/测试资料，不入库
+_jvmprobe/
+_qa_verify/
+xgorgon.py
+_verify_key.py
+QA_REPORT*.md
+API_FAILOVER.md
+UPDATE_SETUP.md
+ARCHITECTURE*.md
+docs/qa/
+update.json
+build.bat
+release.bat

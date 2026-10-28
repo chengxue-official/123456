@@ -48,7 +48,7 @@ public class PlaybackSignerTest {
             byte[] bodyHash = body == null ? new byte[16] : md5(body);
             assertEquals("row " + i + " hash",
                     row.get("hash"),
-                    hex(signer.hashF13(HongguoSm3.digest(query.getBytes(StandardCharsets.UTF_8)),
+                    hex(signer.hashF13(HgSm3.digest(query.getBytes(StandardCharsets.UTF_8)),
                             bodyHash, ts)));
             assertEquals("row " + i + " gorgon",
                     row.get("gorgon"), signer.gorgon(query, body, ts, 42131));

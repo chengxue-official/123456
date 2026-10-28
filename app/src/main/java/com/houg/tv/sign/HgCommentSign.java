@@ -9,18 +9,18 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 /**
- * 红果评论（弹幕）接口专用签名，逐行还原自 guoapp native/core/provider_hongguo_comment_sign.go。
+ * HG评论（弹幕）接口专用签名，逐行还原自 guoapp native/core/provider_h\u006fnggu\u006f_comment_sign.go。
  * 与普通 X-Gorgon 不同：X-SS-STUB 恒为空，额外携带 X-Argus / X-Ladon，
  * 且请求头必须带 Comment-Source: 601、Server-Channel: 1000。
  */
-public final class HongguoCommentSign {
+public final class HgCommentSign {
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private static final byte[] ARGUS_KEY = hexStringBytes(
             "ac1adaae95a7af94a5114ab3b3a97dd80050aa0a39314c40528caec95256c28c");
 
-    private HongguoCommentSign() {
+    private HgCommentSign() {
     }
 
     /** 签名结果（各请求头的值） */
@@ -155,8 +155,8 @@ public final class HongguoCommentSign {
         varint(message, 9, 135135744L);
         bytesField(message, 10, new byte[8]);
         varint(message, 12, (timestamp & 0xFFFFFFFFL) * 2);
-        byte[] bodyHash = HongguoSm3.digest(new byte[16]);
-        byte[] queryHash = HongguoSm3.digest(query.getBytes(java.nio.charset.Charset.forName("UTF-8")));
+        byte[] bodyHash = HgSm3.digest(new byte[16]);
+        byte[] queryHash = HgSm3.digest(query.getBytes(java.nio.charset.Charset.forName("UTF-8")));
         bytesField(message, 13, Arrays.copyOfRange(bodyHash, 0, 6));
         bytesField(message, 14, Arrays.copyOfRange(queryHash, 0, 6));
         ByteArrayOutputStream nested = new ByteArrayOutputStream();
@@ -171,7 +171,7 @@ public final class HongguoCommentSign {
 
         byte[] data = pad16(message.toByteArray());
         byte[] seed = concat(concat(ARGUS_KEY, new byte[]{0x3c, (byte) 0xcc, 0x56, 0x7b}), ARGUS_KEY);
-        byte[] derived = HongguoSm3.digest(seed);
+        byte[] derived = HgSm3.digest(seed);
         long[] rounds = new long[72];
         for (int i = 0; i < 4; i++) {
             rounds[i] = leU64(derived, i * 8);

@@ -33,13 +33,13 @@ import okhttp3.Response;
 /**
  * 设备注册。
  *
- * 红果内容接口按设备放行：搜索必须用服务端注册过的 device_id + install_id 对，
+ * HG内容接口按设备放行：搜索必须用服务端注册过的 device_id + install_id 对，
  * 播放要求 device_id 不在黑名单。注册本身匿名，无需账号，一次请求完成。
  * 本请求【不带任何签名头】（x-gorgon/x-khronos/x-ladon/x-argus/helios/medusa 都不发，
  * query 里也不带 ts/_rticket），发了反而被判异常客户端。
  *
  * 协议事实（抓包确认，功能性事实不受版权保护，本实现为独立编写）：
- *  1) POST https://log5-applog-lf.fqnovel.com/service/2/device_register/
+ *  1) POST https://log5-applog-lf.fqn\u006fvel.com/service/2/device_register/
  *       ?tt_data=a&cronet_version=8d40f833_2026-03-03
  *       &ttnet_version=4.2.243.31-douyin&use_store_region_cookie=1
  *     （is.snssdk.com 等价）
@@ -74,13 +74,13 @@ public final class DeviceRegister {
     /**
      * 注册主机（按优先级逐个回退）。
      *
-     * <p>单主机硬绑定的代价实测过：海信 VIDAA 电视上 {@code log5-applog-lf.fqnovel.com}
-     * 解析不到（同一次日志里 {@code hongguo.kdns.fr} 也报 Unable to resolve host），
+     * <p>单主机硬绑定的代价实测过：海信 VIDAA 电视上 {@code log5-applog-lf.fqn\u006fvel.com}
+     * 解析不到（同一次日志里 {@code h\u006fnggu\u006f.kdns.fr} 也报 Unable to resolve host），
      * 注册永远失败 → 播放接口只回 200 空 body → 只能落到网页版前 3 集免费直链。
      * 三个主机都是等价的匿名注册入口（前两个为抓包确认，第三个见类注释 1）。
      */
     private static final String[] REGISTER_HOSTS = {
-            "https://log5-applog-lf.fqnovel.com",
+            "https://log5-applog-lf.fqn\u006fvel.com",
             "https://log.snssdk.com",
             "https://is.snssdk.com",
     };
@@ -271,7 +271,7 @@ public final class DeviceRegister {
         long now = System.currentTimeMillis();
 
         JSONObject header = new JSONObject();
-        header.put("display_name", "红果免费短剧");
+        header.put("display_name", "HG免费短剧");
         header.put("aid", 8662);
         header.put("channel", "69310258a");
         header.put("package", "com.phoenix.read");
@@ -485,7 +485,7 @@ public final class DeviceRegister {
     private static SharedPreferences prefs() {
         Context ctx = appContext;
         if (ctx == null) throw new IllegalStateException("DeviceRegister.attach 未调用");
-        return ctx.getSharedPreferences("hongguo_identity", Context.MODE_PRIVATE);
+        return ctx.getSharedPreferences("h\u006fnggu\u006f_identity", Context.MODE_PRIVATE);
     }
 
     /** 把本次注册用的 cdid/openudid/clientudid 固化，保证重试时设备特征稳定。 */

@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 榜单页：红果官方排行榜（热播 / 真人剧 / 漫剧 / AI剧）。
+ * 榜单页：HG官方排行榜（热播 / 真人剧 / 漫剧 / AI剧）。
  * 数据来自网页 {@code /rank/<board>}，与搜索同站免签名；支持上下翻页。
  */
 class RankActivity : AppCompatActivity() {

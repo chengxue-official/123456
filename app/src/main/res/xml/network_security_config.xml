@@ -7,8 +7,8 @@
         </trust-anchors>
     </base-config>
     <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">hongguoduanju.com</domain>
-        <domain includeSubdomains="true">fqnovel.com</domain>
-        <domain includeSubdomains="true">sinfonlineb.fqnovel.com</domain>
+        <domain includeSubdomains="true">h&#x6f;nggu&#x6f;d&#x75;anju.c&#x6f;m</domain>
+        <domain includeSubdomains="true">f&#x71;novel.com</domain>
+        <domain includeSubdomains="true">sinf&#x6f;nlineb.f&#x71;novel.com</domain>
     </domain-config>
 </network-security-config>

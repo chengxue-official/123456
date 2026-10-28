@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 红果 CENC mp4 的 box 解析与样本表展开（绝对偏移）。
+ * HG CENC mp4 的 box 解析与样本表展开（绝对偏移）。
  * 与 Python 金标准 _decrypt_ref.py 的 parse / track_info 逐字节对齐。
  */
 public final class CencMp4Parser {

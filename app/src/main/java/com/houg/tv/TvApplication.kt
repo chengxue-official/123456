@@ -47,7 +47,7 @@ object App {
     }
 }
 
-class DuanjuApplication : Application() {
+class TvApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         App.init(this)

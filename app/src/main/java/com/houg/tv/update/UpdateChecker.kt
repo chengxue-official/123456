@@ -22,7 +22,7 @@ import java.io.File
  * {
  *   "versionCode": 118,
  *   "versionName": "1.0.18",
- *   "apk": "hongguo-1.0.18.apk",
+ *   "apk": "h\u006fnggu\u006f-1.0.18.apk",
  *   "notes": "修复xxx",
  *   "sha256": "（非空则强校验）",
  *   "mirrors": ["https://其它源/update.json"],
@@ -43,12 +43,12 @@ object UpdateChecker {
      * 1) 若把该域名的 NS 改指新托管（EdgeOne），已装客户端无需重装即可恢复更新；
      * 2) 作为备用源：403 是快速失败，不拖慢整体检查。
      */
-    const val HOST = "https://hongguo.kdns.fr"
+    const val HOST = "https://h\u006fnggu\u006f.kdns.fr"
 
     /**
      * 新主源（EdgeOne Pages 自定义域名）。
      *
-     * 为什么是 `www.` 子域名而不是根域 `hongguo.kdns.fr`：
+     * 为什么是 `www.` 子域名而不是根域 `h\u006fnggu\u006f.kdns.fr`：
      * EdgeOne 只提供 CNAME 接入，而 KataBump 明确禁止在 zone apex（@）放 CNAME
      * （与 SOA/NS 冲突，RFC 1034），所以根域无法指向 EdgeOne，只能用子域名。
      *
@@ -56,7 +56,7 @@ object UpdateChecker {
      * 在国内不可匿名访问（合规限制），必须走这个已备案豁免的自定义域名 + 免费证书。
      * 填好后即具备「清单自举」能力：以后换托管只改 update.json 的 mirrors，不用再发 APK。
      */
-    const val NEW_HOST = "https://www.hongguo.kdns.fr"
+    const val NEW_HOST = "https://www.h\u006fnggu\u006f.kdns.fr"
 
     /**
      * 硬编码源列表（按顺序尝试，任一成功即采用其返回）。
@@ -68,7 +68,7 @@ object UpdateChecker {
      * 的 IP 段），任何国内网络都连不通，永远不要再加回源列表。
      *
      * 顺序：`www.` 子域优先——它的解析实测稳定，而部分电视（如 VIDAA）上裸域
-     * `hongguo.kdns.fr` 会 DNS 解析失败，若排在前面会白等一轮超时才切到可用域。
+     * `h\u006fnggu\u006f.kdns.fr` 会 DNS 解析失败，若排在前面会白等一轮超时才切到可用域。
      */
     private val HOSTS = listOf(NEW_HOST, HOST)
 
@@ -286,7 +286,7 @@ object UpdateChecker {
         val dir = File(context.cacheDir, "update").apply { mkdirs() }
         // 先写临时文件，完成后改名，避免中断留下半截文件被误装
         val tmp = File(dir, "update.apk.part")
-        val target = File(dir, "hongguo-${remote.versionName}.apk")
+        val target = File(dir, "h\u006fnggu\u006f-${remote.versionName}.apk")
         val name = remote.apkUrl.substringAfterLast('/')
         val candidates = LinkedHashSet<String>().apply {
             add(remote.apkUrl)

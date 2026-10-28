@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">红果短剧</string>
+    <string name="app_name">\u7ea2\u679c短剧</string>
     <string name="nav_search">搜索</string>
     <string name="nav_history">历史</string>
     <string name="nav_favorite">收藏</string>

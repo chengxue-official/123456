@@ -1,93 +1,62 @@
-# HougTime — 逆向还原工程
+# TV Video Player（原生 Android 客户端）
 
-基于 `红果tv简洁版.apk`（包名 `com.houg.tv`，桌面名 Houg时光）的 smali 逆向还原。
+自研 Android 视频（短剧向）客户端，纯 Kotlin + Java、View 体系，无 Compose。Media3/ExoPlayer 播放，内置自实现签名层与多域容灾。
 
-## 还原来源
+## 环境
 
-| 混淆类 | 真实语义 | 还原度 |
-|---|---|---|
-| `L사틀;` | X-Gorgon 签名密钥表 | 100% |
-| `L사클;` | 网络核心（27 方法） | 100% |
-| `L마을;` | 短剧业务仓库 | 95% |
-| `L츄;` | okhttp3.Request.Builder | 100% |
-| `L카열;` | 播放进度持久化 | 100% |
-| `L라비;` | 封面图缓存下载 | 100% |
-| `L너정;` | 业务门面 Facade | 100% |
-| `L가난;` | AppContainer（10 字段） | 100% |
-| `L라늘;` | 根 Composable + 工具集 | 70% |
-| `L가칼;` | 主 UI lambda（51 参数） | 85% |
-| `L타먼;` | RecommendViewModel | 95% |
-| `L파멸;` | SearchViewModel | 90% |
-| `L카쳘;` | PlayerRequestViewModel | 100% |
-| `L가넌;` | AppShellViewModel | 100% |
-| `L가단;` | 导航枚举（单条目） | 100% |
-| `L사글;` | 推荐分区枚举（单条目） | 100% |
-| `L카런;` | 编解码器偏好枚举 | 100% |
-| `L가건;` | AppShellNavigationState | 100% |
-| `L타번;` | RecommendViewState | 100% |
-| `L파뇌;` | SavedStateHandle 包装 | 100% |
+| 项 | 版本 |
+|---|---|
+| JDK | 21（`gradle.properties`/IDE 指向 JDK21，低版本会报 class version 65 错误） |
+| Android SDK | Platform 36 / Build-Tools 36.0.0 |
+| AGP / Kotlin | 见根目录 `build.gradle.kts` 版本号 |
+| 最低支持 | Android 5.0（API 21，HEVC+CENC 硬解） |
 
-## 关键成果：X-Gorgon 签名算法
+首次 clone：Android Studio 打开会自动生成 `local.properties`（SDK 路径），无需手写。依赖走根目录 `settings.gradle.kts` 配置的阿里云镜像，国内网络可直连。
 
-密钥全部硬编码在 `L사틀;-><clinit>`：
+## 构建
 
-- **SALT**（20 字节）：`44b9b9d9a4aef9fca493aa757ca3c2c4a496938f`
-- **PREFIX**（6 字节）：`84 04 40 1C 00 00`
-- **MAGIC**（4 字节）：`00 06 0B 1C`
-- **BITREV**：256 项 8 位倒序表（运行时按位反转生成）
-
-算法：`MD5(query)[0:4] + MD5(body)[0:4] + MAGIC + unixSec(大端)` → 异或 SALT → 高低半字节交换/异或下一字节/查 BITREV/取反异或 0x14 → 前缀 + 大写 HEX。
-
-## 接口清单
-
-```
-搜索建议  https://hongguoduanju.com/incent_resource/suggestion?query=<kw>&app_id=8662&count=20
-剧集详情  https://hongguoduanju.com/detail?series_id=<id>
-播放页    https://hongguoduanju.com/player/<id>/<ep>
-视频模型  POST https://api5-normal-sinfonlineb.fqnovel.com/novel/player/video_model/v1/
+```bash
+./gradlew.bat :app:assembleDebug --offline   # 有 gradle 缓存时
+./gradlew.bat :app:assembleDebug             # 首次/无缓存，在线拉依赖
 ```
 
-固定参数：`aid=8662`、`app_name=novelread`、`version_code=73532`、UA 伪装 `com.phoenix.read`。
+产物：`app/build/outputs/apk/debug/app-debug.apk`。
+
+## 发版（内部约定）
+
+发版走独立的发布仓（静态托管 + 版本检测），流程：
+
+1. `app/build.gradle.kts` 里 `versionCode` +1、`versionName` 升位（**必须递增 versionCode**，否则客户端收不到更新）；
+2. 构建产物拷入发布仓 `public/`，生成/更新 `update.json`（含 versionCode/versionName/sha256/更新说明）；
+3. 发布仓提交并 push，托管平台自动部署。
+
+## 签名注意
+
+- 覆盖安装依赖**统一签名**。团队内部使用同一份 `debug.keystore`（不进 git，走私密渠道分发）。
+- 换 keystore 会导致签名指纹不一致，老用户无法覆盖安装，只能卸载重装（丢本地数据）。
+- 校验指纹：`keytool -list -v -keystore debug.keystore -alias androiddebugkey`。
 
 ## 目录结构
 
 ```
 app/src/main/java/com/houg/tv/
-  DuanjuApplication.kt       Application + Coil ImageLoader
-  MainActivity.kt            入口，沉浸式全屏 + 自建 ComposeView
-  di/AppContainer.kt         依赖容器（10 字段）
-  di/JsonProvider.kt         kotlinx Json 单例
-  sign/XGorgon.java          签名算法
-  sign/SignedRequest.java    请求头装配
-  net/NetClient.java         网络层
-  net/HttpClientProvider.kt  OkHttp 单例
-  repo/DramaRepository.java  业务仓库
-  store/PlaybackStore.kt     进度持久化
-  store/PlaybackCoordinator.kt
-  module/                    SysInfo / List / Cover 三模块
-  facade/Facade.kt           门面
-  image/CoverDownloader.kt   封面缓存
-  ui/Enums.kt                5 个枚举
-  ui/State.kt                4 个状态类
-  ui/ViewModels.kt           5 个 ViewModel
-  ui/RootScreen.kt           根 Composable
-  ui/AppContent.kt           主 UI 树
-  util/SiteParser.kt          正则表 + 集号挑选
+├── net/            # 网络层：NetClient（检索/详情/播放地址，含多域容灾、补季召回）、局域网投喂
+├── sign/           # 自实现签名层：请求签名、SM3、媒体解密（CENC）
+├── playback/       # CENC MP4 下载/解密/重封装（本地无缝播放）
+├── repo/           # 本地索引（DramaIndex：分类页/搜索加速，编辑距离容错）
+├── data/           # Room：观看历史、搜索历史
+├── update/         # 版本检测与升级弹窗
+└── util/           # 日志、崩溃上报、二维码、拼音等
 ```
 
-## 验证
+## 关键机制速查
 
-```bash
-# 1) 签名算法自检（Java / Python 应输出一致）
-python3 xgorgon.py
+- **检索三路并行**：全库搜索（权威但慢）/ 联想词（快）/ 网页搜索页兜底，按 id 去重合并。
+- **多季补全**：详情页与搜索页对“第 N 季”剧做逐季并行探测（全库检索、按批延伸、整批空手即停），保证系列季数召回齐全。
+- **播放容灾**：多 CDN 域名池轮询；CENC 加密片源走本地下载→解密→重封装→无缝起播；25s 起播失败回退软解。
+- **日志**：AppLog 单文件轮转（两代），可上传远端日志接口，崩溃自动附带。
 
-# 2) 编译
-./gradlew assembleDebug
+## 已知取舍
 
-# 3) 枚举单条目验证（期望输出 1）
-#    反编译产物中 L가단;->파 只有一个实例
-```
-
-## 已知缺口
-
-Compose 视觉层（`L라늘;->마` 剩余 UI 树、`L가칼;->자` 内部组件链）反编译语义噪声大，已按状态机重建，运行时行为需真机验证。
+- 联想词接口快但词表不全，多季识别必须走逐季探测（慢而准）。
+- 包名与 applicationId 保持历史值不变（签名/升级兼容），勿随意改动。

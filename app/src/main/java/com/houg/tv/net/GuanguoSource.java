@@ -24,7 +24,7 @@ import okhttp3.Response;
 /**
  * 观果（api.drama.9ddm.com）内容源：免签名、免 Cookie、免设备注册。
  *
- * <p>红果 App 取流接口（multi_video_model）与网页播放页已双双下线（2026-10），
+ * <p>HG App 取流接口（multi_video_model）与网页播放页已双双下线（2026-10），
  * 观果成为当前唯一可稳定出流的源，故作为默认内容源接入：
  * <ul>
  *   <li>目录：{@code POST /drama/home/search}，按题材筛选、page 分页（每页 30）；</li>
@@ -35,7 +35,7 @@ import okhttp3.Response;
  *       （CDN 对 UA/Referer 不敏感，HEAD 免鉴权）。</li>
  * </ul>
  *
- * <p>ID 约定（与红果 ID 区分，便于 NetClient 分流）：
+ * <p>ID 约定（与HG ID 区分，便于 NetClient 分流）：
  * 剧 {@code gg:<oneId>}，集 {@code gg:<oneId>:<order>}。
  */
 public final class GuanguoSource {
@@ -78,7 +78,7 @@ public final class GuanguoSource {
     /* ==================== 目录 ==================== */
 
     /**
-     * 栏目分页。{@code offset} 语义与红果一致：{@code offset / 30 + 1} 为页码。
+     * 栏目分页。{@code offset} 语义与HG一致：{@code offset / 30 + 1} 为页码。
      *
      * <p>栏目映射（实测）：真人剧 → {@code subject=""}；漫剧/AI剧 → {@code subject="动漫"}，
      * 再用条目的 {@code aigc} 标记区分（0=漫剧，1=AI剧）。观果的动漫目录里 AI 剧稀疏
@@ -336,7 +336,7 @@ public final class GuanguoSource {
 
     /**
      * 榜单：观果 {@code order} 参数只认「最新」，没有独立热度榜，因此按栏目题材取
-     * 最新目录，名次即列表顺序。点进去可直接播放，比红果「能看榜不能播」可用。
+     * 最新目录，名次即列表顺序。点进去可直接播放，比HG「能看榜不能播」可用。
      */
     NetClient.RankingPage ranking(NetClient.RankBoard board, int page) throws Exception {
         String genreKey;
