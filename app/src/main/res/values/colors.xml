@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色主题配色（对齐红果/Flutter 版） -->
+    <color name="bg">#0D0D0D</color>
+    <color name="surface">#1A1A1A</color>
+    <color name="surface_light">#242424</color>
+    <color name="primary">#E53935</color>
+    <color name="primary_dark">#C62828</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B0B0B0</color>
+    <color name="text_hint">#757575</color>
+    <color name="divider">#2A2A2A</color>
+    <color name="focus_border">#E53935</color>
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+</resources>

@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">红果短剧</string>
+    <string name="nav_search">搜索</string>
+    <string name="nav_history">历史</string>
+    <string name="nav_favorite">收藏</string>
+    <string name="nav_rank">榜单</string>
+    <string name="nav_log">日志</string>
+    <string name="nav_update">检查更新</string>
+    <string name="nav_category">分类</string>
+
+    <!-- 分类 -->
+    <string name="category_title">分类</string>
+    <string name="category_empty">该分类暂无内容</string>
+    <string name="category_failed">分类加载失败，请重试</string>
+    <string name="filter_all">全部</string>
+
+    <!-- 榜单 -->
+    <string name="rank_title">榜单</string>
+    <string name="rank_empty">榜单暂无数据</string>
+    <string name="rank_load_failed">榜单加载失败，请重试</string>
+    <string name="rank_no">NO.%1$s</string>
+    <string name="rank_page_info">第 %1$s / %2$s 页</string>
+    <string name="rank_updated">%1$s</string>
+    <string name="log_title">调试日志</string>
+    <string name="log_clear">清空</string>
+    <string name="log_upload">上传日志</string>
+    <string name="log_reset_identity">重置身份</string>
+    <string name="log_selfcheck">自检</string>
+    <string name="log_selfcheck_running">协议自检进行中…\n① 注册 → ② 搜索 → ③ 播放 → ④ 解密</string>
+    <string name="log_empty">（暂无日志）</string>
+    <string name="log_interface_info">Base URL: %1$s\ndevice_id: %2$s\niid: %3$s\nX-Gorgon: %4$s</string>
+    <string name="search_hint">搜索短剧</string>
+    <string name="empty">暂无内容</string>
+    <string name="empty_history">还没有观看记录，去首页看看吧</string>
+    <string name="empty_favorite">还没有收藏内容，去首页看看吧</string>
+    <string name="load_failed">加载失败，请重试</string>
+    <string name="back">返回</string>
+    <string name="continue_watch">继续播放</string>
+    <string name="episode_count">共 %1$s 集</string>
+    <string name="play_error">播放失败：%1$s</string>
+    <!-- 「重试」= 换新设备身份后重播。用户只管能不能看，不暴露「身份」概念 -->
+    <string name="error_retry">重试</string>
+    <string name="error_retry_doing">重试中…</string>
+    <string name="aspect_fit">适应</string>
+    <string name="aspect_stretch">拉伸</string>
+    <string name="aspect_original">原始</string>
+    <string name="aspect_fill">填充</string>
+    <string name="lan_input">跨屏输入</string>
+    <string name="lan_input_unavailable">无法启动跨屏输入（未获取到局域网地址，请确认电视已连 Wi-Fi，且与手机在同一网络）</string>
+    <string name="keyboard">键盘</string>
+    <string name="key_delete">删除</string>
+    <string name="hot_search">大家都在搜</string>
+    <string name="scan_title">手机扫码输入</string>
+    <string name="scan_hint">用手机微信/相机扫二维码，在打开的页面输入剧名，点「发送到电视」即可。\n手机需与电视连接同一个 Wi-Fi。</string>
+    <string name="scan_url_hint">也可手动在手机浏览器输入：%1$s</string>
+    <string name="lan_input_keep_alive">关闭窗口不影响，10 分钟内手机仍可继续输入</string>
+    <string name="lan_input_received">已收到手机输入：%1$s</string>
+    <string name="community_hint">交流群 1130515703 · 免费分享，谨防受骗</string>
+
+    <!-- 收藏 -->
+    <string name="favorite">收藏</string>
+    <string name="favorited">已收藏</string>
+    <string name="favorite_added">已加入收藏</string>
+    <string name="favorite_removed">已取消收藏</string>
+    <string name="title_favorite">我的收藏</string>
+    <string name="title_history">观看历史</string>
+
+    <!-- 续播 -->
+    <string name="continue_ep">继续观看 第 %1$s 集</string>
+    <string name="resume_hint">继续上次进度：第 %1$s 集 %2$s</string>
+    <string name="watched_ep">上次看到第 %1$s 集</string>
+
+    <!-- 详情页：同系列其他季 -->
+    <string name="season_section_title">同系列剧集</string>
+    <!-- 详情页：相关推荐 -->
+    <string name="related_section_title">相关推荐</string>
+
+    <!-- 清空 -->
+    <string name="clear">清空</string>
+    <string name="clear_history_confirm">确定清空全部观看历史吗？</string>
+    <string name="clear_search_history_confirm">确定清空全部搜索记录吗？</string>
+    <string name="cleared">已清空</string>
+    <string name="search_history">搜索记录</string>
+
+    <!-- 播放器提示 -->
+    <string name="last_episode">已经是最后一集了</string>
+    <string name="first_episode">已经是第一集了</string>
+    <string name="ep_played_out">已播放完最后一集</string>
+    <string name="seek_forward">快进 %1$s</string>
+    <string name="seek_backward">快退 %1$s</string>
+    <string name="menu_open">菜单</string>
+    <string name="menu_fill">画面填充</string>
+    <string name="menu_quality">清晰度</string>
+    <string name="quality_auto">自动</string>
+    <string name="quality_480">480P</string>
+    <string name="quality_720">720P</string>
+    <string name="quality_1080">1080P</string>
+    <string name="quality_origin">原画</string>
+    <string name="quality_switched">清晰度已切换为%1$s，正在重新起播</string>
+    <string name="menu_danmaku_on">弹幕：开</string>
+    <string name="menu_danmaku_off">弹幕：关</string>
+    <string name="menu_speed">倍速</string>
+    <string name="menu_decoder">解码</string>
+    <string name="menu_decoder_hard">硬解</string>
+    <string name="menu_decoder_soft">软解</string>
+    <string name="menu_decoder_switched">解码方式已切换为%1$s，正在重新起播</string>
+    <string name="decoder_auto_soft">硬解失败，已自动切换为软解重试</string>
+    <string name="decoder_retry_avc">硬解失败，已改用 H.264 片源重试</string>
+    <string name="decoder_hevc_soft_oom">本机无法解码该清晰度的片源（H.265/HEVC 高清档），已尝试其他方式仍失败；建议稍后再试或反馈给开发者</string>
+    <string name="play_error_no_video_track">该集没有可解码的视频轨（只有声音），可在菜单里切软解或换一集试试</string>
+    <string name="menu_exit">退出播放</string>
+    <string name="press_again_to_exit">再按一次返回键退出播放</string>
+
+    <!-- 选集弹窗 -->
+    <string name="menu_episodes">选集</string>
+    <string name="ep_picker_title">选集</string>
+    <string name="ep_picker_subtitle">正在看第 %1$s 集</string>
+    <string name="ep_picker_close">关闭</string>
+    <string name="ep_picker_jump">跳转集数</string>
+    <string name="ep_picker_prev_group">‹ 上一组</string>
+    <string name="ep_picker_next_group">下一组 ›</string>
+    <string name="ep_picker_range">第 %1$s—%2$s 集 / 共 %3$s 集</string>
+    <string name="ep_picker_jump_hint">输入集数后按确定跳转</string>
+    <string name="ep_picker_jump_invalid">没有这一集</string>
+</resources>

@@ -1,0 +1,123 @@
+################ A. STRUCTURE DUMP ################
+len=51106
+top keys: code,data,search_scene,passback,query,has_more,message,search_target_channel,next_offset,plan_id,search_id,
+code=0 msg=SUCCESS
+data.len=6
+data[0] keys: cell_name,more_button_position,use_recommend,search_result_id,daren_search,cell_operation_type,push_start_info,book_data,cache_page_key,book_id,sub_title_new,search_high_light,sub_title_type,cell_source,common_report_params,show_type,recommend_reason_tags,search_attached_info,recommend_reason_line,book_hot_content_data,style,cell_id,category_tag_ids,ai_search_placeholder,
+   cell_name = 
+   more_button_position = 0
+   use_recommend = true
+   search_result_id = 7591707265023888409
+   daren_search = false
+   cell_operation_type = 0
+   push_start_info = null
+   book_data (arr) len=1
+      [0] keys: serial_count,data_rate,read_cnt_v2,sub_title_extra_list,source,book_name,copyright_info,type,shelf_cnt_history,reading_gift_permission,last_publish_time,long_press_action,tts_status,flight_user_selected,first_chapter_group_id,score,read_cnt_short_sub_text,audio_thumb_url_hd,read_cnt_fallback_threshold,related_bookids,platform_book_id,exclusive,media_id,is_laobai,quality_rate,read_count,recommend_group_id,latest_read_item_id,create_time,last_chapter_title,detail_page_thumb_url,author,show_vip_tag,read_count_show_strategy,keep_publish_days,color_dominate,first_chapter_item_id,read_cnt_sub_text,raw_book_name,tags,category_v2_map,original_author_infos,latest_read_time,reputation_thumb_uri,read_progress,read_cnt_fallback_text,related_audio_bookids,last_chapter_item_id,all_bookshelf_count,word_number,thumb_url,length_type,role,gender,thumb_uri,pure_category_tags,visibility_info,sub_info,horiz_thumb_url,original_book_name,coin_price,top_right_icon,platform,listen_count,authorize_type,last_chapter_update_time,extra,creation_status,genre,is_ebook,first_chapter_title,color_audio_dominate,read_cnt_fallback_sub_text,read_cnt_text,recommend_info,in_bookshelf,book_type,sub_title,total_price,audio_thumb_uri,first_online_time,expand_thumb_url,last_chapter_group_id,genre_type,read_page_progress,abstract,book_id,category_schema,book_short_name,update_status,book_abstract_v2,read_count_all,tomato_book_status,poster_id,category,op_tag,
+   cache_page_key = 
+   book_id = 7591707265023888409
+   sub_title_new (obj) keys: highligh_item_list,metric_param,
+   search_high_light (obj) keys: abstract,title,
+   sub_title_type = 0
+   cell_source = 1
+   common_report_params (obj) keys: related_book_id,
+   show_type = 110
+   recommend_reason_tags (arr) len=3
+      [0] keys: RecommendTagTypeNew,Highlight,Content,Priority,RecommendType,CanClick,
+   search_attached_info = 9471924652313495718:0:0:474741790:202610272242178A4F61428D75F7B3193B
+   recommend_reason_line = 1
+   book_hot_content_data = null
+   style (obj) keys: cover_size,with_favorite_button,candidate_postion,use_wide_item_space,show_more_book_abstract,jump_to_page,use_new_booklist_style,audio_both_jump_player,search_cell_showed_style,topic_square_with_book,show_username,use_selector_v2,use_aweme_sdk,hide_tab_selector,use_new_one_to_one_point_four_ratio_style,interval_type,
+   cell_id = 1000
+   category_tag_ids = null
+   ai_search_placeholder = null
+data[1] keys: cell_name,more_button_position,use_recommend,search_result_id,daren_search,cell_operation_type,push_start_info,book_data,cache_page_key,book_id,sub_title_new,search_high_light,sub_title_type,cell_source,common_report_params,show_type,recommend_reason_tags,search_attached_info,recommend_reason_line,book_hot_content_data,style,cell_id,category_tag_ids,ai_search_placeholder,
+   cell_name = 
+   more_button_position = 0
+   use_recommend = true
+   search_result_id = 7582957798934203454
+   daren_search = false
+   cell_operation_type = 0
+   push_start_info = null
+   book_data (arr) len=1
+      [0] keys: serial_count,data_rate,read_cnt_v2,sub_title_extra_list,source,book_name,copyright_info,type,shelf_cnt_history,reading_gift_permission,last_publish_time,long_press_action,tts_status,flight_user_selected,first_chapter_group_id,score,read_cnt_short_sub_text,audio_thumb_url_hd,read_cnt_fallback_threshold,platform_book_id,exclusive,media_id,is_laobai,quality_rate,read_count,recommend_group_id,latest_read_item_id,create_time,last_chapter_title,detail_page_thumb_url,author,show_vip_tag,read_count_show_strategy,keep_publish_days,color_dominate,first_chapter_item_id,read_cnt_sub_text,raw_book_name,tags,category_v2_map,original_author_infos,latest_read_time,read_progress,read_cnt_fallback_text,last_chapter_item_id,all_bookshelf_count,word_number,thumb_url,length_type,role,gender,thumb_uri,pure_category_tags,visibility_info,sub_info,horiz_thumb_url,original_book_name,coin_price,top_right_icon,platform,listen_count,authorize_type,last_chapter_update_time,extra,creation_status,genre,is_ebook,first_chapter_title,color_audio_dominate,read_cnt_fallback_sub_text,read_cnt_text,recommend_info,in_bookshelf,book_type,sub_title,total_price,audio_thumb_uri,first_online_time,expand_thumb_url,last_chapter_group_id,genre_type,read_page_progress,abstract,book_id,category_schema,update_status,book_abstract_v2,read_count_all,tomato_book_status,poster_id,category,op_tag,
+   cache_page_key = 
+   book_id = 7582957798934203454
+   sub_title_new (obj) keys: highligh_item_list,metric_param,
+   search_high_light (obj) keys: abstract,title,
+   sub_title_type = 0
+   cell_source = 1
+   common_report_params (obj) keys: related_book_id,
+   show_type = 110
+   recommend_reason_tags (arr) len=3
+      [0] keys: RecommendTagTypeNew,Highlight,Content,Priority,RecommendType,CanClick,
+   search_attached_info = 9471924652313495718:1:0:152631298:202610272242178A4F61428D75F7B3193B
+   recommend_reason_line = 1
+   book_hot_content_data = null
+   style (obj) keys: cover_size,with_favorite_button,candidate_postion,use_wide_item_space,show_more_book_abstract,jump_to_page,use_new_booklist_style,audio_both_jump_player,search_cell_showed_style,topic_square_with_book,show_username,use_selector_v2,use_aweme_sdk,hide_tab_selector,use_new_one_to_one_point_four_ratio_style,interval_type,
+   cell_id = 1001
+   category_tag_ids = null
+   ai_search_placeholder = null
+top.has_more = true
+top.next_offset = 6
+top.search_id = 202610272242178A4F61428D75F7B3193B
+
+################ B. PAGINATION ################
+offset=0 -> code=0 n=6 |别惹我，后果很严重|别惹他的小可怜（别名：炽炀）|他打人专打脸，你惹他干嘛？|被家族嫌弃的我，竟举世无敌|开局有位贤内助，助我一路攀登|别惹我，我疯起来，连自己都怕
+offset=6 -> code=0 n=10 |别惹他，他七个师姐全是疯批！|别惹我，后果很严重|别惹他的小可怜（别名：炽炀）|他打人专打脸，你惹他干嘛？|开局有位贤内助，助我一路攀登|别惹我，我疯起来，连自己都怕|你惹他？疯了？|别惹我，我出手谁也扛不住|家道中落？我反手缔造最强组织|他，你们怎么敢惹的！
+offset=12 -> code=0 n=10 |别惹我，后果很严重|方羽，炼气五千年|他打人专打脸，你惹他干嘛？|别惹我，我疯起来，连自己都怕|你惹他？疯了？|别惹我，我出手谁也扛不住|他，你们怎么敢惹的！|大少爷归家，专治各种不服|惹他干嘛？他手眼通天啊！|你惹他干嘛？他能复活作品
+offset=30 -> code=0 n=10 |别惹我，后果很严重|方羽，炼气五千年|他打人专打脸，你惹他干嘛？|别惹我，我疯起来，连自己都怕|你惹他？疯了？|别惹我，我出手谁也扛不住|他，你们怎么敢惹的！|惹他干嘛？他手眼通天啊！|大少爷归家，专治各种不服|你惹他干嘛？他能复活作品
+
+################ C. SUGGEST FAMILY ################
+[HIT] /reading/bookapi/search/suggest/v/ q=你疯了别惹他 len=13070 code=0 data(obj) keys=client_ab,suggest_result,query_key,query_result,use_rich,query_result_v2,
+[HIT] /reading/bookapi/search/suggest/v/ q=他老婆比禁忌还凶万倍 len=15813 code=0 data(obj) keys=client_ab,suggest_result,query_key,query_result,use_rich,query_result_v2,
+[HIT] /reading/bookapi/search/suggest/v/ q=你疯了别惹他，他老婆比禁忌还凶万倍第三季 len=13216 code=0 data(obj) keys=client_ab,suggest_result,query_key,query_result,use_rich,query_result_v2,
+[ERR] /reading/bookapi/suggest/v/ q=你疯了别惹他 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/suggest/v/ q=他老婆比禁忌还凶万倍 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/suggest/v/ q=你疯了别惹他，他老婆比禁忌还凶万倍第三季 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/suggestion/v/ q=你疯了别惹他 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/suggestion/v/ q=他老婆比禁忌还凶万倍 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/suggestion/v/ q=你疯了别惹他，他老婆比禁忌还凶万倍第三季 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/suggest_word/v/ q=你疯了别惹他 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/suggest_word/v/ q=他老婆比禁忌还凶万倍 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/suggest_word/v/ q=你疯了别惹他，他老婆比禁忌还凶万倍第三季 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/hint/v/ q=你疯了别惹他 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/hint/v/ q=他老婆比禁忌还凶万倍 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/hint/v/ q=你疯了别惹他，他老婆比禁忌还凶万倍第三季 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/complete/v/ q=你疯了别惹他 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/complete/v/ q=他老婆比禁忌还凶万倍 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/complete/v/ q=你疯了别惹他，他老婆比禁忌还凶万倍第三季 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[HIT] /reading/bookapi/search/page/v/ q=你疯了别惹他 len=59517 code=0 data(arr) n=6 |这是癫文，我是神经，介绍完毕|疯了吧？她满级大佬，你非惹她？|重生后，撩疯阴湿老公他红眼沦陷|都说小叔凶，可他夜夜翻窗求我抱|夺舍改命？池小姐回归碾碎全场！|恶龙养的小奶龙她又娇又软还凶残
+[HIT] /reading/bookapi/search/page/v/ q=他老婆比禁忌还凶万倍 len=52759 code=0 data(arr) n=6 |背景无敌，我刀斩诸天|都说小叔凶，可他夜夜翻窗求我抱|新婚夜撞邪遇害，我被老婆养尸|杀敌变强，副作用敌人全扛！|离开后，小叔悔不当初|全球御兽：我的宠兽皆是禁忌
+[HIT] /reading/bookapi/search/page/v/ q=你疯了别惹他，他老婆比禁忌还凶万倍第三季 len=53952 code=0 data(arr) n=6 |背景无敌，我刀斩诸天|收徒：别惹她！她师父比禁忌还凶|我，精神病，在无限流乱杀|求你别惹他，他有七个疯批师姐！|乖，过来|疯批大佬不能惹
+[ERR] /reading/bookapi/search/aggregation/v/ q=你疯了别惹他 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/aggregation/v/ q=他老婆比禁忌还凶万倍 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/aggregation/v/ q=你疯了别惹他，他老婆比禁忌还凶万倍第三季 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/result/v/ q=你疯了别惹他 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/result/v/ q=他老婆比禁忌还凶万倍 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/result/v/ q=你疯了别惹他，他老婆比禁忌还凶万倍第三季 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/playlet/v/ q=你疯了别惹他 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/playlet/v/ q=他老婆比禁忌还凶万倍 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/playlet/v/ q=你疯了别惹他，他老婆比禁忌还凶万倍第三季 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/video/v/ q=你疯了别惹他 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/video/v/ q=他老婆比禁忌还凶万倍 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/bookapi/search/video/v/ q=你疯了别惹他，他老婆比禁忌还凶万倍第三季 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/playlet/search/v/ q=你疯了别惹他 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/playlet/search/v/ q=他老婆比禁忌还凶万倍 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/playlet/search/v/ q=你疯了别惹他，他老婆比禁忌还凶万倍第三季 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/distribution/playlet/search/v/ q=你疯了别惹他 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/distribution/playlet/search/v/ q=他老婆比禁忌还凶万倍 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[ERR] /reading/distribution/playlet/search/v/ q=你疯了别惹他，他老婆比禁忌还凶万倍第三季 org.json.JSONException: A JSONObject text must begin with '{' at 1 [character 2 line 1]
+[HIT] /reading/bookapi/search/tab/v/ q=你疯了别惹他 len=49735 code=0 
+[HIT] /reading/bookapi/search/tab/v/ q=他老婆比禁忌还凶万倍 len=51123 code=0 
+[HIT] /reading/bookapi/search/tab/v/ q=你疯了别惹他，他老婆比禁忌还凶万倍第三季 len=92571 code=0 
+
+################ D. search_type MATRIX ################
+search_type='short_play' -> code=0 n=6 |背景无敌，我刀斩诸天|都说小叔凶，可他夜夜翻窗求我抱|新婚夜撞邪遇害，我被老婆养尸|离开后，小叔悔不当初|全球御兽：我的宠兽皆是禁忌|冷婚三年，离婚撕证后京圈佛子悔断肠
+search_type='playlet' -> code=0 n=6 |背景无敌，我刀斩诸天|都说小叔凶，可他夜夜翻窗求我抱|新婚夜撞邪遇害，我被老婆养尸|杀敌变强，副作用敌人全扛！|离开后，小叔悔不当初|全球御兽：我的宠兽皆是禁忌
+search_type='video' -> code=0 n=6 |背景无敌，我刀斩诸天|都说小叔凶，可他夜夜翻窗求我抱|新婚夜撞邪遇害，我被老婆养尸|离开后，小叔悔不当初|全球御兽：我的宠兽皆是禁忌|冷婚三年，离婚撕证后京圈佛子悔断肠
+search_type='all' -> code=0 n=6 |背景无敌，我刀斩诸天|都说小叔凶，可他夜夜翻窗求我抱|新婚夜撞邪遇害，我被老婆养尸|离开后，小叔悔不当初|全球御兽：我的宠兽皆是禁忌|冷婚三年，离婚撕证后京圈佛子悔断肠
+search_type='' -> code=0 n=6 |背景无敌，我刀斩诸天|都说小叔凶，可他夜夜翻窗求我抱|新婚夜撞邪遇害，我被老婆养尸|离开后，小叔悔不当初|全球御兽：我的宠兽皆是禁忌|冷婚三年，离婚撕证后京圈佛子悔断肠
+search_type='drama' -> code=0 n=6 |背景无敌，我刀斩诸天|都说小叔凶，可他夜夜翻窗求我抱|新婚夜撞邪遇害，我被老婆养尸|离开后，小叔悔不当初|全球御兽：我的宠兽皆是禁忌|冷婚三年，离婚撕证后京圈佛子悔断肠
+search_type='series' -> code=0 n=6 |背景无敌，我刀斩诸天|都说小叔凶，可他夜夜翻窗求我抱|新婚夜撞邪遇害，我被老婆养尸|杀敌变强，副作用敌人全扛！|离开后，小叔悔不当初|全球御兽：我的宠兽皆是禁忌
+search_type='shortplay' -> code=0 n=6 |背景无敌，我刀斩诸天|都说小叔凶，可他夜夜翻窗求我抱|新婚夜撞邪遇害，我被老婆养尸|杀敌变强，副作用敌人全扛！|离开后，小叔悔不当初|全球御兽：我的宠兽皆是禁忌
+search_type='short_play_video' -> code=0 n=6 |背景无敌，我刀斩诸天|都说小叔凶，可他夜夜翻窗求我抱|新婚夜撞邪遇害，我被老婆养尸|杀敌变强，副作用敌人全扛！|离开后，小叔悔不当初|全球御兽：我的宠兽皆是禁忌

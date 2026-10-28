@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 选集弹窗里的集数格子：焦点态（primary 底）> 当前集态（橙底）> 普通态。
+     顺序敏感：state_focused 必须排在 state_selected 之前，否则遥控器焦点
+     落在"当前集"格子上时会因 selected 命中而丢掉焦点高亮。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape>
+            <solid android:color="@color/primary" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+    <item android:state_selected="true">
+        <shape>
+            <solid android:color="#FF7A45" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <solid android:color="@color/surface_light" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+</selector>

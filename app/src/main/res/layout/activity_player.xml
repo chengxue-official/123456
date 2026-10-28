@@ -1,0 +1,315 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/black">
+
+    <!-- 视频画面：AspectRatioFrameLayout 按比例缩放，避免竖屏被拉宽 -->
+    <androidx.media3.ui.AspectRatioFrameLayout
+        android:id="@+id/video_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center"
+        android:background="@color/black">
+
+        <SurfaceView
+            android:id="@+id/video_surface"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clickable="true" />
+    </androidx.media3.ui.AspectRatioFrameLayout>
+
+    <!-- 弹幕层（在视频之上、控制层之下） -->
+    <com.houg.tv.DanmakuView
+        android:id="@+id/danmaku_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="false"
+        android:focusable="false"
+        android:visibility="gone" />
+
+    <!-- 加载中 -->
+    <ProgressBar
+        android:id="@+id/progress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:visibility="gone" />
+
+    <!-- 错误提示（canRetry 时下方带「重试」：实际是换新设备身份后重播，用户无需理解概念） -->
+    <LinearLayout
+        android:id="@+id/error_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingStart="48dp"
+        android:paddingEnd="48dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/error_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:textColor="@color/text_secondary"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/btn_error_retry"
+            android:layout_width="160dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="18dp"
+            android:gravity="center"
+            android:background="@drawable/button_bg"
+            android:clickable="true"
+            android:focusable="false"
+            android:focusableInTouchMode="false"
+            android:text="@string/error_retry"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- ================= 顶部信息条（自动隐藏） ================= -->
+    <LinearLayout
+        android:id="@+id/top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="20dp"
+        android:background="#CC000000"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/episode_info"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:maxLines="1"
+            android:ellipsize="end" />
+    </LinearLayout>
+
+    <!-- 快进/快退/切集 提示（居中，短暂显示） -->
+    <TextView
+        android:id="@+id/toast_hint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="#AA000000"
+        android:paddingStart="22dp"
+        android:paddingEnd="22dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:textColor="@color/text_primary"
+        android:textSize="18sp"
+        android:visibility="gone" />
+
+    <!-- ================= 进度条（自动隐藏） ================= -->
+    <LinearLayout
+        android:id="@+id/control_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:background="#AA000000"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/position_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <SeekBar
+            android:id="@+id/seek_bar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:focusable="false"
+            android:focusableInTouchMode="false"
+            android:background="@drawable/seek_bar_focus"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:max="1000" />
+
+        <TextView
+            android:id="@+id/duration_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <!-- 手机端菜单入口：电视用遥控器菜单键，此处默认隐藏，由代码按设备显示 -->
+        <TextView
+            android:id="@+id/btn_menu"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginStart="14dp"
+            android:gravity="center"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:background="@drawable/button_bg"
+            android:clickable="true"
+            android:focusable="false"
+            android:text="@string/menu_open"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- ================= 菜单（菜单键调出）：画面填充 + 弹幕开关 ================= -->
+    <LinearLayout
+        android:id="@+id/menu_panel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="72dp"
+        android:layout_marginEnd="28dp"
+        android:orientation="vertical"
+        android:padding="10dp"
+        android:background="@drawable/card_bg"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/menu_fill"
+            android:layout_width="220dp"
+            android:layout_height="44dp"
+            android:gravity="center_vertical"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/menu_fill"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:background="@drawable/button_bg"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:clickable="true" />
+
+        <TextView
+            android:id="@+id/menu_quality"
+            android:layout_width="220dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/menu_quality"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:background="@drawable/button_bg"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:clickable="true" />
+
+        <TextView
+            android:id="@+id/menu_danmaku"
+            android:layout_width="220dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/menu_danmaku_on"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:background="@drawable/button_bg"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:clickable="true" />
+
+        <TextView
+            android:id="@+id/menu_speed"
+            android:layout_width="220dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/menu_speed"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:background="@drawable/button_bg"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:clickable="true" />
+
+        <TextView
+            android:id="@+id/menu_episodes"
+            android:layout_width="220dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/menu_episodes"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:background="@drawable/button_bg"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:clickable="true" />
+
+        <TextView
+            android:id="@+id/menu_decoder"
+            android:layout_width="220dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/menu_decoder"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:background="@drawable/button_bg"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:clickable="true" />
+
+        <TextView
+            android:id="@+id/menu_exit"
+            android:layout_width="220dp"
+            android:layout_height="44dp"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/menu_exit"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:background="@drawable/button_bg"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:clickable="true" />
+    </LinearLayout>
+
+    <!-- 焦点锚点：播放页所有按键都走 Activity.onKeyDown 全局处理，这里需要一个
+         1dp 的隐形可聚焦控件承接焦点，避免菜单关闭后焦点落空、或被会消费方向键的
+         控件（如 SeekBar）抢占导致快进快退失效。 -->
+    <View
+        android:id="@+id/focus_anchor"
+        android:layout_width="1dp"
+        android:layout_height="1dp"
+        android:layout_gravity="bottom|start"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:background="@android:color/transparent" />
+
+    <!-- 选集弹窗（最上层，默认 gone，菜单"选集"点亮） -->
+    <include layout="@layout/ep_picker" />
+
+    <!-- 居中提示条（toast_hint）见上；本布局不再保留旧版底部控制栏按钮。 -->
+</FrameLayout>

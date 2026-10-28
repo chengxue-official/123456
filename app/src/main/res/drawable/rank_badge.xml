@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 榜单名次徽标底色：默认主色圆角；前三名由代码切换为金/银/铜 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/primary" />
+    <corners android:radius="4dp" />
+</shape>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 分类胶囊：选中=品牌红实心，聚焦=红描边，未选=深灰 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_selected="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/primary" />
+            <corners android:radius="18dp" />
+        </shape>
+    </item>
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/surface_light" />
+            <stroke android:width="2dp" android:color="@color/primary" />
+            <corners android:radius="18dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/surface_light" />
+            <corners android:radius="18dp" />
+        </shape>
+    </item>
+</selector>

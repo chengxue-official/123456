@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 手机竖排版分类页：与 activity_category.xml 同构，边距 106dp(TV overscan) → 24dp。
+     id 完全一致，CategoryActivity 按设备形态二选一 inflate。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg">
+
+    <!-- 顶部第一行：分类标题 + 返回。大类胶囊在 411dp 竖屏下与标题同行会被返回键挤掉
+         半截（看着像被屏幕边缘裁掉），因此单独占一行、整行可横滑。 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp">
+
+        <View
+            android:layout_width="4dp"
+            android:layout_height="22dp"
+            android:background="@drawable/brand_accent" />
+
+        <TextView
+            android:id="@+id/category_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:includeFontPadding="false"
+            android:text="@string/category_title"
+            android:textColor="@color/text_primary"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/category_back"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:background="@drawable/button_bg"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="@string/back"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+    <!-- 顶部第二行：三大类切换 -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:clipToPadding="false"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/category_tab_bar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tab_real"
+                style="@style/CategoryTab"
+                android:nextFocusRight="@id/tab_comic"
+                android:text="真人剧" />
+
+            <TextView
+                android:id="@+id/tab_comic"
+                style="@style/CategoryTab"
+                android:layout_marginStart="8dp"
+                android:nextFocusLeft="@id/tab_real"
+                android:nextFocusRight="@id/tab_ai"
+                android:text="漫剧" />
+
+            <TextView
+                android:id="@+id/tab_ai"
+                style="@style/CategoryTab"
+                android:layout_marginStart="8dp"
+                android:nextFocusLeft="@id/tab_comic"
+                android:text="AI剧" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <!-- 六维筛选行：服务端 selector_rows 动态渲染（主题/设定/背景/推荐/受众/时间） -->
+    <LinearLayout
+        android:id="@+id/filter_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:orientation="vertical"
+        android:visibility="gone" />
+
+    <!-- 内容区 -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="4dp">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/category_list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="16dp"
+            android:clipToPadding="false" />
+
+        <ProgressBar
+            android:id="@+id/category_progress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/category_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:textColor="@color/text_secondary"
+            android:textSize="15sp"
+            android:visibility="gone" />
+    </FrameLayout>
+</LinearLayout>

@@ -1,0 +1,386 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg">
+
+    <!--
+      布局语言借鉴 TVBox：品牌色竖条 + 粗体标题、分类胶囊、图标卡片入口、大圆角。
+      焦点图显式声明为三行网格，避免遥控器在工具图标区与卡片区之间乱跳：
+        工具行(右上)  btn_search   -> btn_log        -> btn_update
+        分类行(左)    tab_real     -> tab_comic      -> tab_ai
+        卡片行(左)    btn_history  -> btn_favorite   -> btn_rank
+    -->
+
+    <!-- ============ 第一行：品牌标识 + 右上角工具图标 ============ -->
+    <LinearLayout
+        android:id="@+id/header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="@drawable/header_bg"
+        android:gravity="center_vertical"
+        android:paddingBottom="10dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <!-- 品牌色竖条：对应参考图标题左侧的红色强调条 -->
+                <View
+                    android:layout_width="4dp"
+                    android:layout_height="22dp"
+                    android:background="@drawable/brand_accent" />
+
+                <TextView
+                    android:id="@+id/app_title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:text="@string/app_name"
+                    android:textColor="@color/text_primary"
+                    android:textSize="22sp"
+                    android:textStyle="bold"
+                    android:includeFontPadding="false" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/community_hint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="14dp"
+                android:layout_marginTop="4dp"
+                android:text="@string/community_hint"
+                android:textColor="@color/text_hint"
+                android:textSize="11sp"
+                android:maxLines="1"
+                android:includeFontPadding="false" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:id="@+id/btn_search"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="10dp"
+            android:background="@drawable/tool_icon_bg"
+            android:nextFocusRight="@id/btn_log"
+            android:nextFocusDown="@id/tab_real"
+            android:focusable="true"
+            android:clickable="true">
+
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_nav_search"
+                android:contentDescription="@string/nav_search" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/btn_log"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="10dp"
+            android:background="@drawable/tool_icon_bg"
+            android:nextFocusLeft="@id/btn_search"
+            android:nextFocusRight="@id/btn_update"
+            android:nextFocusDown="@id/tab_comic"
+            android:focusable="true"
+            android:clickable="true">
+
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_nav_log"
+                android:contentDescription="@string/nav_log" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/btn_update"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="10dp"
+            android:background="@drawable/tool_icon_bg"
+            android:nextFocusLeft="@id/btn_log"
+            android:nextFocusDown="@id/tab_ai"
+            android:focusable="true"
+            android:clickable="true">
+
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_nav_update"
+                android:contentDescription="@string/nav_update" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- ============ 第二行：分类胶囊 ============ -->
+    <LinearLayout
+        android:id="@+id/tab_bar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/tab_real"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="真人剧"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="@color/pill_text"
+            android:background="@drawable/pill_bg"
+            android:nextFocusUp="@id/btn_search"
+            android:nextFocusRight="@id/tab_comic"
+            android:nextFocusDown="@id/btn_history"
+            android:focusable="true"
+            android:clickable="true" />
+
+        <TextView
+            android:id="@+id/tab_comic"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:layout_marginStart="8dp"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="漫剧"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="@color/pill_text"
+            android:background="@drawable/pill_bg"
+            android:nextFocusUp="@id/btn_log"
+            android:nextFocusLeft="@id/tab_real"
+            android:nextFocusRight="@id/tab_ai"
+            android:nextFocusDown="@id/btn_favorite"
+            android:focusable="true"
+            android:clickable="true" />
+
+        <TextView
+            android:id="@+id/tab_ai"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:layout_marginStart="8dp"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="AI剧"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="@color/pill_text"
+            android:background="@drawable/pill_bg"
+            android:nextFocusUp="@id/btn_update"
+            android:nextFocusLeft="@id/tab_comic"
+            android:nextFocusDown="@id/btn_rank"
+            android:focusable="true"
+            android:clickable="true" />
+    </LinearLayout>
+
+    <!-- ============ 第三行：图标卡片入口 ============
+         竖屏手机 411dp 宽放不下 4 张卡，包横向滚动；TV 上内容能放下不滚动 -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:scrollbars="none">
+
+    <LinearLayout
+        android:id="@+id/nav_row"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:id="@+id/btn_history"
+            android:layout_width="wrap_content"
+            android:layout_height="58dp"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:background="@drawable/nav_card_bg"
+            android:nextFocusUp="@id/tab_real"
+            android:focusable="true"
+            android:clickable="true">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_nav_history"
+                android:contentDescription="@string/nav_history" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:includeFontPadding="false"
+                android:text="@string/nav_history"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/btn_favorite"
+            android:layout_width="wrap_content"
+            android:layout_height="58dp"
+            android:layout_marginStart="12dp"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:background="@drawable/nav_card_bg"
+            android:nextFocusUp="@id/tab_comic"
+            android:focusable="true"
+            android:clickable="true">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_nav_favorite"
+                android:contentDescription="@string/nav_favorite" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:includeFontPadding="false"
+                android:text="@string/nav_favorite"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/btn_rank"
+            android:layout_width="wrap_content"
+            android:layout_height="58dp"
+            android:layout_marginStart="12dp"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:background="@drawable/nav_card_bg"
+            android:nextFocusUp="@id/tab_ai"
+            android:focusable="true"
+            android:clickable="true">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_nav_rank"
+                android:contentDescription="@string/nav_rank" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:includeFontPadding="false"
+                android:text="@string/nav_rank"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/btn_category"
+            android:layout_width="wrap_content"
+            android:layout_height="58dp"
+            android:layout_marginStart="12dp"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:background="@drawable/nav_card_bg"
+            android:nextFocusUp="@id/tab_ai"
+            android:nextFocusLeft="@id/btn_rank"
+            android:focusable="true"
+            android:clickable="true">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_nav_category"
+                android:contentDescription="@string/nav_category" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:includeFontPadding="false"
+                android:text="@string/nav_category"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp" />
+        </LinearLayout>
+    </LinearLayout>
+    </HorizontalScrollView>
+
+    <!-- ============ 内容区 ============ -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="12dp">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recycler"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:paddingTop="4dp"
+            android:paddingBottom="16dp"
+            android:clipToPadding="false" />
+
+        <ProgressBar
+            android:id="@+id/progress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/status_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:textColor="@color/text_secondary"
+            android:textSize="15sp"
+            android:visibility="gone" />
+    </FrameLayout>
+</LinearLayout>
+
+    <!-- ============ 顶部边界中间：手机/电视 UI 兜底切换 ============
+         半透明小胶囊，不进焦点链不抢焦点；电视被误判成手机时（VIDAA 等
+         非 Android TV 系统自动判不出）从这里手动切形态，重启后生效 -->
+    <TextView
+        android:id="@+id/btn_uimode"
+        android:layout_width="wrap_content"
+        android:layout_height="30dp"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="6dp"
+        android:gravity="center"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:text="界面：电视"
+        android:textSize="11sp"
+        android:textColor="@color/text_secondary"
+        android:background="@drawable/tool_icon_bg"
+        android:alpha="0.5"
+        android:focusable="true"
+        android:clickable="true" />
+</FrameLayout>

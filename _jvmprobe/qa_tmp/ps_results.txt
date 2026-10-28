@@ -1,0 +1,3 @@
+PASS  [special] 鐪?JSON 瑙ｆ瀽鎴愬姛锛沝raft 涓庡師鏂?Ordinal 閫愬瓧绗︾浉绛夛紙闀垮害 =50锛堟湡鏈? 闀垮害 8锛泃tlMs=-1
+PASS  [big] 鐪?JSON 瑙ｆ瀽鎴愬姛锛沝raft 涓庡師鏂?Ordinal 閫愬瓧绗︾浉绛夛紙闀垮害 =5100锛堟湡鏈? 闀垮害 8锛泃tlMs=-1
+PASS  [trim] 鐪?JSON 瑙ｆ瀽鎴愬姛锛沝raft 涓庡師鏂?Ordinal 閫愬瓧绗︾浉绛夛紙闀垮害 =4锛堟湡鏈? 闀垮害 8锛泃tlMs=-1

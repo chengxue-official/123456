@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="20dp"
+    android:paddingBottom="20dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/scan_title"
+        android:textColor="@color/text_primary"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:gravity="center"
+        android:text="@string/scan_hint"
+        android:textColor="@color/text_secondary"
+        android:textSize="14sp"
+        android:lineSpacingExtra="4dp" />
+
+    <!-- 二维码（白底容器：扫码识别需要浅底深码，不能用深色主题底） -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:padding="12dp"
+        android:background="@color/white">
+
+        <ImageView
+            android:id="@+id/qr_image"
+            android:layout_width="220dp"
+            android:layout_height="220dp"
+            android:contentDescription="@string/scan_title"
+            android:scaleType="fitCenter" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/qr_url"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center"
+        android:textColor="@color/text_hint"
+        android:textSize="13sp"
+        android:textIsSelectable="true" />
+
+    <!-- 会话保持提示：关窗不停服务，跨屏输入绑定在 10 分钟空闲内持续有效 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:text="@string/lan_input_keep_alive"
+        android:textColor="@color/text_hint"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/qr_close"
+        android:layout_width="wrap_content"
+        android:layout_height="40dp"
+        android:layout_marginTop="16dp"
+        android:gravity="center"
+        android:paddingStart="32dp"
+        android:paddingEnd="32dp"
+        android:text="@string/back"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp"
+        android:background="@drawable/button_bg"
+        android:focusable="true"
+        android:clickable="true" />
+
+</LinearLayout>

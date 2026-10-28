@@ -1,0 +1,44 @@
+== 1/4 ç¼–è¯‘ Android å¹³å°æ¡© + AppLog æ¡© ==
+== 2/4 ç¼–è¯‘ç”Ÿäº§æºç  LanInputServer.ktï¼ˆåŸæ–‡æœªæ”¹ï¼‰==
+== 3/4 ç¼–è¯‘æµ‹è¯•é©±åŠ¨ ==
+×¢: LanInputProbe.javaÊ¹ÓÃ»ò¸²¸ÇÁËÒÑ¹ıÊ±µÄ API¡£
+×¢: ÓĞ¹ØÏêÏ¸ĞÅÏ¢, ÇëÊ¹ÓÃ -Xlint:deprecation ÖØĞÂ±àÒë¡£
+== 4/4 è¿è¡Œåè®®çº§éªŒè¯ ==
+PASS  Æô¶¯·µ»ØÓĞĞ§¶Ë¿Ú  | port=11519
+PASS  port ÊôĞÔÒ»ÖÂ  | get=11519
+PASS  ÖØ¸´ start ÃİµÈ  | ¶ş´Î start ·µ»ØÍ¬¶Ë¿Ú
+PASS  ±¾»úµØÖ·Ì½²â  | addr=26.2.157.191
+PASS  3 Ìõ¿ÕÏĞÔ¤Á¬½ÓÏÂÊ×Ò³ÈÔ 200  | code=200
+PASS  Ê×Ò³Ê××Ö½Ú²»±»Ô¤Á¬½ÓÍÏËÀ£¨<1500ms£©  | ºÄÊ±=30ms
+PASS  Ò³Ãæº¬ÊäÈë¿òÓë POST ±íµ¥  | º¬ kw ÊäÈë¿ò+±íµ¥=true
+PASS  Ò³Ãæ±êÌâÕıÈ·
+PASS  submit ´¿ÖĞÎÄ  | code=200 body=ok
+PASS  submit ¾çÃû¡¤ÖĞÎÄ  | code=200 body=ok
+PASS  submit ¿Õ¸ñ¼ÓºÅ£¨Íù·µÓ¦±£³Ö²»±ä£©  | code=200 body=ok
+PASS  submit °Ù·ÖºÅ×ÖÃæÁ¿£¨Íù·µÓ¦±£³Ö²»±ä£©  | code=200 body=ok
+PASS  submit ¿Õ¹Ø¼ü´Ê£¨Ó¦²»´¥·¢»Øµ÷£©  | code=400 body=empty
+PASS  submit ¼ÓºÅ¼´¿Õ¸ñ ·µ»Ø 200/ok  | code=200
+PASS  POST ±íµ¥Ìá½» ·µ»Ø 200  | code=200
+PASS  POST ±íµ¥·µ»ØÂäµØÒ³  | <!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ºì¹ûTV Ô¶³ÌÊäÈë</title>
+<style>body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+ background:#141414;color:#eee;padding:22px;box-sizing:border-box}
+ h1{font-size:19px;margin:0 0 6px}p{color:#9a9a9a;font-size:14px;line-height:1.6}
+ a{color:#e53935;font-size:16px}</style></head><body>
+<h1>ÒÑ·¢ËÍµ½µçÊÓ</h1><p>µçÊÓÉÏ»áÁ¢¼´¿ªÊ¼ËÑË÷£¬Çë»Øµ½µçÊÓ¼ÌĞø¡£</p>
+<p><a href="/">¼ÌĞøÊäÈë</a></p>
+</body></html>
+PASS  favicon ·µ»Ø 404  | code=404
+PASS  favicon ²»·µ»ØÒ³Ãæ
+PASS  »Øµ÷´¥·¢ 6 ´Î£¨¿Õ´Ê²»¼Æ£©  | received=[¶¼ÊĞ, ÇìÓàÄê, a b+c, %E5%BA%86%E4%BD%99%E5%B9%B4, ºì¹û TV, ·²ÈËĞŞÏÉ´«]
+PASS  ÖĞÎÄÕıÈ·½âÂë  | [¶¼ÊĞ, ÇìÓàÄê, a b+c, %E5%BA%86%E4%BD%99%E5%B9%B4, ºì¹û TV, ·²ÈËĞŞÏÉ´«]
+PASS  ¿Õ¸ñ+¼ÓºÅ Íù·µ²»±ä  | a b+c
+PASS  °Ù·ÖºÅ×ÖÃæÁ¿ Íù·µ²»±ä  | %E5%BA%86%E4%BD%99%E5%B9%B4
+PASS  query ÖĞ + ½âÂëÎª¿Õ¸ñ  | ºì¹û TV
+PASS  POST ÖĞÎÄÕıÈ·½âÂë  | ·²ÈËĞŞÏÉ´«
+PASS  ²¢·¢ 5 ÇëÇóÈ«²¿µ½´ï  | received=11
+PASS  Í£Ö¹ºó¾Ü¾øÁ¬½Ó  | stop ºóÔÙ´ÎÇëÇóÓ¦Å×Òì³£
+
+==== ½á¹û: 26 Í¨¹ı, 0 Ê§°Ü ====

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 首页分类胶囊文字色：选中/聚焦（红底或红描边底）用白色，未选用次级灰 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_selected="true" android:color="@color/white" />
+    <item android:state_focused="true" android:color="@color/white" />
+    <item android:color="@color/text_secondary" />
+</selector>

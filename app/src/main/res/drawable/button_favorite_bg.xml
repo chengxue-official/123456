@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 收藏按钮背景：已收藏（selected）时深红标识，聚焦（focused）时亮红高亮。
+     注意顺序：组合态（selected+focused）优先匹配 selected 分支也可接受，
+     这里 focused 放最前保证焦点可见性最高。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape>
+            <solid android:color="@color/primary" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+    <item android:state_selected="true">
+        <shape>
+            <solid android:color="@color/primary_dark" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <solid android:color="@color/surface_light" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+</selector>

@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg">
+
+    <!-- 顶部栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp">
+
+        <TextView
+            android:id="@+id/btn_back"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="@string/back"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:background="@drawable/button_bg"
+            android:focusable="true"
+            android:clickable="true" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:text="@string/log_title"
+            android:textColor="@color/text_primary"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/btn_upload"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginStart="12dp"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="@string/log_upload"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:background="@drawable/button_bg"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:nextFocusUp="@id/btn_back"
+            android:nextFocusDown="@id/btn_back"
+            android:clickable="true" />
+
+        <TextView
+            android:id="@+id/btn_reset_identity"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginStart="12dp"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="@string/log_reset_identity"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:background="@drawable/button_bg"
+            android:focusable="true"
+            android:clickable="true" />
+
+        <TextView
+            android:id="@+id/btn_copy"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginStart="12dp"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="复制"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:background="@drawable/button_bg"
+            android:focusable="true"
+            android:clickable="true" />
+
+        <TextView
+            android:id="@+id/btn_share"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginStart="12dp"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="分享"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:background="@drawable/button_bg"
+            android:focusable="true"
+            android:clickable="true" />
+
+        <TextView
+            android:id="@+id/btn_selfcheck"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginStart="12dp"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="@string/log_selfcheck"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:background="@drawable/button_bg"
+            android:focusable="true"
+            android:clickable="true" />
+
+        <TextView
+            android:id="@+id/btn_clear"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginStart="12dp"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="@string/log_clear"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:background="@drawable/button_bg"
+            android:focusable="true"
+            android:clickable="true" />
+    </LinearLayout>
+
+    <!-- 设备配置信息（自动显示） -->
+    <TextView
+        android:id="@+id/device_info_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="13sp" />
+
+    <!-- 日志滚动区 -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp">
+
+        <TextView
+            android:id="@+id/log_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            android:fontFamily="monospace" />
+    </ScrollView>
+
+    <!-- 底部接口信息 -->
+    <TextView
+        android:id="@+id/info_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="14dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="13sp" />
+</LinearLayout>

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 一行筛选：左侧组名 + 右侧横滑胶囊。
+     胶囊用 HorizontalScrollView 承载（不用 RecyclerView），
+     保证屏幕外的选项也能被遥控器 DPAD 聚焦并自动滚入视野。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="44dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <TextView
+        android:id="@+id/filter_label"
+        android:layout_width="42dp"
+        android:layout_height="wrap_content"
+        android:includeFontPadding="false"
+        android:textColor="@color/text_hint"
+        android:textSize="13sp" />
+
+    <HorizontalScrollView
+        android:id="@+id/filter_scroll"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:descendantFocusability="afterDescendants"
+        android:focusable="false"
+        android:overScrollMode="never"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/filter_chips"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingEnd="8dp" />
+    </HorizontalScrollView>
+</LinearLayout>

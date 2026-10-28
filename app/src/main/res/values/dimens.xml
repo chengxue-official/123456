@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      页面安全边距 token：手机默认值 + *_tv 变体（TV overscan 5% 安全区：左右 64dp / 上下 36dp）。
+      注意：不用 values-television/ 静态限定符——AppCompat 重建 Resources 时会把强设的
+      uiMode 打回系统值，Activity 层拿不到 TV 资源。改由 UiScale 按设备形态代码选值。
+    -->
+    <dimen name="page_h">24dp</dimen>
+    <dimen name="page_top">14dp</dimen>
+    <dimen name="page_h_tv">64dp</dimen>
+    <dimen name="page_top_tv">36dp</dimen>
+    <!-- 网格卡片统一间距（配合 GridSpacingDecoration，首列/首行不加） -->
+    <dimen name="grid_gap">12dp</dimen>
+    <dimen name="grid_gap_tv">14dp</dimen>
+    <!-- 字号增益系数（float，UiScale.warp 读取后乘进 scaledDensity） -->
+    <item name="font_boost" format="float" type="dimen">1.0</item>
+    <item name="font_boost_tv" format="float" type="dimen">1.05</item>
+</resources>

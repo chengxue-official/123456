@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  详情页「同系列剧集」横滑小卡：封面 + 剧名（标题本身含「第N季」）。
+  宽固定 96dp，封面高由 RatioCoverView 按 150:205 推出，不变形。
+  不加 focusableInTouchMode：手机端第一次点击即可生效。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="96dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="4dp"
+    android:background="@drawable/card_bg"
+    android:focusable="true"
+    android:clickable="true">
+
+    <com.houg.tv.RatioCoverView
+        android:id="@+id/season_cover"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scaleType="centerCrop"
+        android:background="@color/surface_light" />
+
+    <TextView
+        android:id="@+id/season_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp"
+        android:paddingBottom="2dp"
+        android:textColor="@color/text_primary"
+        android:textSize="12sp"
+        android:maxLines="2"
+        android:ellipsize="end" />
+</LinearLayout>
