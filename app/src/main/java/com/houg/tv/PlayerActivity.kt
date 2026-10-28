@@ -244,6 +244,19 @@ class PlayerActivity : AppCompatActivity() {
     @Volatile private var prefetchRunning = false
     /** 本轮预取失败的 vid：不再反复重试，避免请求风暴被风控（切集后新窗口自然重来）。 */
     private val failedPrefetch = mutableSetOf<String>()
+    /**
+     * 媒体 CDN 限流（HTTP 429）冷却截止时间。
+     * 线上 1.1.3 MiTV 日志：预加载撞 429 后仍逐集推进，连环请求把限流窗口一直续着，
+     * 用户切集时全部失败只能杀进程。命中 429 后暂停预加载到该时间点。
+     */
+    @Volatile private var mediaCooldownUntil = 0L
+    @Volatile private var mediaCooldownActive = false
+    /**
+     * 当前错误面板是否由媒体限流（429）引起：此时「重试」只重播、不换设备身份——
+     * 429 与身份无关，换身份反而在限流窗口内多发一次注册请求（QA BUG-005）。
+     * 每次 playCurrent 入口复位。
+     */
+    @Volatile private var retryLimited429 = false
 
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -673,6 +686,7 @@ class PlayerActivity : AppCompatActivity() {
 
         // 起播前清掉上一集的失败标记
         currentEpisodeFailed = false
+        retryLimited429 = false
 
         // 切集时取消在途的预加载任务：它下载的是「按旧的下一集算出的目标」，
         // 继续跑只会白抢带宽（且可能与本集写出同一个文件）。
@@ -745,10 +759,26 @@ class PlayerActivity : AppCompatActivity() {
                 // 起播失败也必须解除切集抑制，否则之后所有 STATE_ENDED 都被忽略，
                 // 用户按上下键切集将永远没有反应。
                 releaseSwitchGuard()
+                // 媒体 CDN 限流（HTTP 429）：暂停预加载，避免后台继续抢同一限流窗口；
+                // 并给出「重试」按钮——旧实现直接硬报「视频下载或解密失败」，
+                // 用户只能杀进程等限流窗口过去（MiTV-MFTR0 1.1.3 投诉）。
+                var limited = false
+                var cause: Throwable? = e
+                while (cause != null) {
+                    if (cause.message?.contains("HTTP 429") == true) { limited = true; break }
+                    cause = cause.cause
+                }
+                if (limited) {
+                    mediaCooldownUntil = System.currentTimeMillis() + PREFETCH_COOLDOWN_MS
+                    mediaCooldownActive = true
+                    retryLimited429 = true
+                }
                 // BUG-114：身份被拒（自动换身份+网页兜底都失败）时给出「重试」按钮，
                 // 实际是换新设备身份后重播——用户不需要摸到日志页去按。
-                showError(e.message ?: getString(R.string.load_failed),
-                        canRetry = e.message == NetClient.DEVICE_IDENTITY_FAILED_MSG)
+                showError(
+                        if (limited) "服务器繁忙，请稍后重试"
+                        else (e.message ?: getString(R.string.load_failed)),
+                        canRetry = limited || e.message == NetClient.DEVICE_IDENTITY_FAILED_MSG)
             }
         }
     }
@@ -822,9 +852,22 @@ class PlayerActivity : AppCompatActivity() {
     private fun prepareClearFile(video: NetClient.VideoModel): File {
         val downloader = CencMp4Downloader(HttpClientProvider.get())
         val variants = video.variants
+        // R-01：起播总时间预算。变体逐个撞限流时最坏要转圈 5 分钟以上
+        //（每变体退避约 22s × 3 个变体），用户只能干看着圈。预算内试完，
+        // 超时即放弃剩余变体早报错——用户点重试比无望等待更有用。
+        val budgetStart = System.currentTimeMillis()
+        fun remainingBudget(): Long =
+            STARTUP_MEDIA_BUDGET_MS - (System.currentTimeMillis() - budgetStart)
+        // 保留最后一次底层异常（429/超时/重置），起播失败时用于判定限流并透传给用户
+        var lastError: Exception? = null
 
         if (variants.isNotEmpty()) {
             for (v in variants) {
+                if (remainingBudget() <= 0L) {
+                    AppLog.d("PlayerActivity", "起播预算 " +
+                            (STARTUP_MEDIA_BUDGET_MS / 1000) + "s 耗尽，放弃剩余变体 codec=" + v.codec)
+                    break
+                }
                 // ⚠️ 明文变体（encrypted=false）必须直下，绝不能跳过。
                 // 旧实现 `if (!v.encrypted) continue` 会把明文变体一律丢弃，
                 // 只留加密变体去走 CENC 解密；而服务端并非所有片源都加密——
@@ -833,7 +876,7 @@ class PlayerActivity : AppCompatActivity() {
                 // 正确做法：明文直下写盘（无需密钥），加密才走 remux 解密。
                 try {
                     val t0 = System.currentTimeMillis()
-                    val enc = downloader.downloadWithRetry(v.urls)
+                    val enc = downloader.downloadWithRetry(v.urls, remainingBudget())
                     if (enc.isEmpty()) {
                         AppLog.d("PlayerActivity", "变体下载为空，跳过 codec=" + v.codec
                                 + " height=" + v.height)
@@ -859,6 +902,10 @@ class PlayerActivity : AppCompatActivity() {
                             + " tkhd=" + tkhdWidth + "x" + tkhdHeight + " rot=" + tkhdRotation)
                     return file
                 } catch (e: Exception) {
+                    // 保留「可重试」异常（429/5xx/瞬断）优先：变体1 撞 429、变体2
+                    // 报 404 时若被 404 覆盖，上层看不出限流，既不给冷却也不给重试
+                    // 按钮（QA BUG-003）。
+                    if (lastError == null || isRetryableMediaError(e)) lastError = e
                     AppLog.e("PlayerActivity", "变体下载/解密失败 codec=" + v.codec
                             + " encrypted=" + v.encrypted, e)
                 }
@@ -866,7 +913,7 @@ class PlayerActivity : AppCompatActivity() {
         } else {
             // 向后兼容：variants 为空时退回 urls + cencKey
             try {
-                val enc = downloader.downloadWithRetry(video.urls)
+                val enc = downloader.downloadWithRetry(video.urls, remainingBudget())
                 val clear = if (video.encrypted && video.cencKey != null) {
                     CencMp4Remuxer.remux(enc, video.cencKey)
                 } else {
@@ -877,10 +924,20 @@ class PlayerActivity : AppCompatActivity() {
                 parseTkhd(file)
                 return file
             } catch (e: Exception) {
+                if (lastError == null || isRetryableMediaError(e)) lastError = e
                 AppLog.e("PlayerActivity", "下载/解密失败", e)
             }
         }
-        throw Exception("视频下载或解密失败")
+        // 带上 cause：起播失败处理靠 cause 链里的「HTTP 429」判定媒体限流
+        throw Exception("视频下载或解密失败", lastError)
+    }
+
+    /** 媒体下载异常是否属瞬态可重试（429/5xx/网络瞬断）；403/404 等永久错误不算。 */
+    private fun isRetryableMediaError(e: Exception): Boolean {
+        val m = e.message ?: return true
+        if (!m.startsWith("HG媒体下载 HTTP ")) return true
+        val code = m.removePrefix("HG媒体下载 HTTP ")
+        return code == "429" || code.startsWith("5")
     }
 
     /**
@@ -1338,6 +1395,13 @@ class PlayerActivity : AppCompatActivity() {
      */
     private fun prefetchNext() {
         if (prefetchRunning) return
+        // 媒体 CDN 限流冷却中：不发起任何预加载，等窗口过去
+        if (System.currentTimeMillis() < mediaCooldownUntil) return
+        if (mediaCooldownActive) {
+            // 冷却结束：清失败标记，让窗口内的集重新预取
+            mediaCooldownActive = false
+            failedPrefetch.clear()
+        }
         // 找出预取窗口内尚未缓存的集（currentPos+1 .. currentPos+PREFETCH_AHEAD）
         val pending = ArrayList<Int>()
         val end = minOf(currentPos + PREFETCH_AHEAD, vidList.size - 1)
@@ -1357,6 +1421,8 @@ class PlayerActivity : AppCompatActivity() {
                     if (gen != playGen) return@launch   // 已切集，本窗口作废
                     val vid = vidList.getOrNull(pos) ?: continue
                     if (findCachedClearFile(vid) != null) continue
+                    var ok = false
+                    var rateLimited = false
                     try {
                         AppLog.d("PlayerActivity", "预加载 pos=$pos vid=$vid")
                         val video = withContext(Dispatchers.IO) {
@@ -1365,7 +1431,6 @@ class PlayerActivity : AppCompatActivity() {
                         withContext(Dispatchers.IO) {
                             val downloader = CencMp4Downloader(
                                     HttpClientProvider.get())
-                            var ok = false
                             // ⚠️ 与 prepareClearFile 保持一致：明文变体（encrypted=false）
                             // 必须直下，旧代码 `if (!v.encrypted) continue` 会让全明文片源
                             // 一集都预加载不成功，切到该集时只能现场下载（转圈很久）。
@@ -1386,12 +1451,19 @@ class PlayerActivity : AppCompatActivity() {
                                         break
                                     } catch (e: Exception) {
                                         AppLog.e("PlayerActivity", "预加载变体失败", e)
+                                        // 429 说明整个媒体 CDN 在限流：换变体（同一批
+                                        // 域名）只会继续撞墙，每个变体还要白等一轮退避
+                                        //（约 14s）。直接跳出，交给下面统一切换冷却。
+                                        if (e.message?.contains("HTTP 429") == true) {
+                                            rateLimited = true
+                                            break
+                                        }
                                     }
                                 }
                             }
                             // 兜底仅在「确实拿到 urls」时走，空数组会让下载器内部
                             // urls[0] 越界（MiTV-MFTR0 日志：Index 0 out of bounds for length 0）
-                            if (!ok && video.urls.isNotEmpty()) {
+                            if (!ok && !rateLimited && video.urls.isNotEmpty()) {
                                 try {
                                     val enc = downloader.downloadWithRetry(video.urls)
                                     if (enc.isNotEmpty()) {
@@ -1405,19 +1477,35 @@ class PlayerActivity : AppCompatActivity() {
                                     }
                                 } catch (e: Exception) {
                                     AppLog.e("PlayerActivity", "预加载兜底失败", e)
+                                    if (e.message?.contains("HTTP 429") == true) rateLimited = true
                                 }
                             }
-                            if (!ok) failedPrefetch.add(vid)
                         }
-                        if (gen != playGen) return@launch
-                        AppLog.d("PlayerActivity", "预加载完成 pos=$pos vid=$vid")
                     } catch (e: Throwable) {
                         // 失败不打扰用户：切集时走正常路径（playCurrent 会重新取流）。
                         // 记下 vid 本轮不再重试，避免每 500ms 一次形成请求风暴。
                         if (e.message?.contains("cancel", ignoreCase = true) != true) {
                             failedPrefetch.add(vid)
                         }
+                        if (e.message?.contains("HTTP 429") == true) rateLimited = true
                         AppLog.d("PlayerActivity", "预加载失败 pos=$pos: " + (e.message ?: ""))
+                    }
+                    // 限流熔断必须在 gen 检查之前：切集瞬间撞 429 时（线上最高频
+                    // 时序，MiTV 1.1.3 19:21:59.846），冷却若被 gen 提前 return
+                    // 跳过，熔断失效，预加载继续逐集撞限流（QA BUG-001）。
+                    if (rateLimited) {
+                        // 媒体 CDN 限流：熔断本轮预加载，冷却后再继续。
+                        // 旧实现失败也立刻推进下一集，连环请求把限流窗口一直续着。
+                        mediaCooldownUntil = System.currentTimeMillis() + PREFETCH_COOLDOWN_MS
+                        mediaCooldownActive = true
+                        AppLog.d("PlayerActivity", "预加载限流，冷却 ${PREFETCH_COOLDOWN_MS / 1000}s")
+                        return@launch
+                    }
+                    if (gen != playGen) return@launch
+                    if (ok) {
+                        AppLog.d("PlayerActivity", "预加载完成 pos=$pos vid=$vid")
+                    } else {
+                        failedPrefetch.add(vid)
                     }
                 }
             } finally {
@@ -1752,6 +1840,20 @@ class PlayerActivity : AppCompatActivity() {
         if (retryIdentityJob?.isActive == true) return
         errorRetry.isEnabled = false
         errorRetry.text = getString(R.string.error_retry_doing)
+        // 429 限流与设备身份无关：只重播，不 resetIdentity/registerNow。
+        // 换身份救不了限流，还会在窗口内多发一次注册请求（QA BUG-005）。
+        if (retryLimited429) {
+            AppLog.d("PlayerActivity", "用户点「重试」→ 限流恢复，直接重播（不换设备身份）")
+            retryIdentityJob = scope.launch {
+                if (isFinishing || isDestroyed) return@launch
+                errorRetry.isEnabled = true
+                errorRetry.text = getString(R.string.error_retry)
+                errorRetry.visibility = View.GONE
+                errorPanel.visibility = View.GONE
+                playCurrent()
+            }
+            return
+        }
         AppLog.d("PlayerActivity", "用户点「重试」→ 换新设备身份后重播")
         retryIdentityJob = scope.launch {
             withContext(Dispatchers.IO) {
@@ -2350,6 +2452,20 @@ class PlayerActivity : AppCompatActivity() {
          * 低内存盒子可接受；再大收益递减且挤占存储。
          */
         private const val PREFETCH_AHEAD = 5
+
+        /**
+         * 媒体 CDN 限流（HTTP 429）后的预加载冷却时长。
+         * 线上日志显示限流窗口约 1~3 分钟：冷却期内一条预加载请求都不发，
+         * 到期后清空失败标记重新预取，让窗口自然结束。
+         */
+        private const val PREFETCH_COOLDOWN_MS = 90_000L
+
+        /**
+         * 起播总时间预算（R-01，用户已拍板）。用户在屏幕前等起播，
+         * 下载+退避的总耗时封顶：超时放弃剩余变体早报错，提示可点重试，
+         * 而不是转圈几分钟。预加载是后台行为，不受此预算限制。
+         */
+        private const val STARTUP_MEDIA_BUDGET_MS = 30_000L
 
         /** 倍速档位 */
         private val SPEEDS = floatArrayOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)

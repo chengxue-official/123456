@@ -14,8 +14,8 @@ android {
         // 适配 Android 5.0（API 21）及以上：HG片源为 HEVC+CENC，需 API 21 起的 HEVC 硬解能力
         minSdk = 21
         targetSdk = 35
-        versionCode = 126
-        versionName = "1.1.3"
+        versionCode = 127
+        versionName = "1.1.4"
     }
 
     // 传统 View 体系，不使用 Compose
