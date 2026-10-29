@@ -53,7 +53,8 @@ class HistoryActivity : AppCompatActivity() {
         val recycler = findViewById<RecyclerView>(R.id.recycler)
         // 页面安全边距：手机 24dp / TV 64dp overscan（同 MainActivity.applyPageInsets）
         val pageH = UiScale.pageH(this)
-        findViewById<View>(R.id.history_top).setPadding(pageH, UiScale.pageTop(this), pageH, 0)
+        val historyTop = findViewById<View>(R.id.history_top)
+        historyTop.setPadding(pageH, UiScale.pageTop(this), pageH, historyTop.paddingBottom)
         recycler.setPadding(pageH, recycler.paddingTop, pageH, recycler.paddingBottom)
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = adapter

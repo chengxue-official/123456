@@ -5,14 +5,13 @@
     android:orientation="vertical"
     android:background="@drawable/bg_cinema">
 
-    <!-- 顶部栏 -->
+    <!-- 顶部栏（横向安全边距由 LogActivity 按 UiScale.pageH 注入） -->
     <LinearLayout
+        android:id="@+id/log_top"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="20dp"
-        android:paddingEnd="20dp">
+        android:gravity="center_vertical">
 
         <TextView
             android:id="@+id/btn_back"
@@ -136,13 +135,11 @@
             android:clickable="true" />
     </LinearLayout>
 
-    <!-- 设备配置信息（自动显示） -->
+    <!-- 设备配置信息（自动显示；横向边距由代码注入） -->
     <TextView
         android:id="@+id/device_info_text"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingStart="20dp"
-        android:paddingEnd="20dp"
         android:paddingTop="10dp"
         android:paddingBottom="10dp"
         android:textColor="@color/text_secondary"
@@ -150,11 +147,10 @@
 
     <!-- 日志滚动区 -->
     <ScrollView
+        android:id="@+id/log_scroll"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:paddingStart="20dp"
-        android:paddingEnd="20dp"
         android:paddingTop="8dp"
         android:paddingBottom="8dp">
 
@@ -167,15 +163,12 @@
             android:fontFamily="monospace" />
     </ScrollView>
 
-    <!-- 底部接口信息 -->
+    <!-- 底部接口信息（横向 + 底部安全边距由代码注入） -->
     <TextView
         android:id="@+id/info_text"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingStart="20dp"
-        android:paddingEnd="20dp"
         android:paddingTop="10dp"
-        android:paddingBottom="14dp"
         android:textColor="@color/text_secondary"
         android:textSize="13sp" />
 </LinearLayout>

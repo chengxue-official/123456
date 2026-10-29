@@ -98,7 +98,15 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.mast).setPadding(h, UiScale.pageTop(this), h, 0)
         findViewById<View>(R.id.dock_row).setPadding(h, 0, h, 0)
         recycler.setPadding(h, 0, h, 0)
-        if (!UiScale.isTv(this)) {
+        if (UiScale.isTv(this)) {
+            // TV overscan：dock 抬出底部 5% 安全区；条高同步加高，避免压扁 52dp 导航项
+            val bottom = UiScale.pageTop(this)
+            val dock = findViewById<View>(R.id.dock_scroll)
+            val lp = dock.layoutParams
+            lp.height += bottom
+            dock.layoutParams = lp
+            dock.setPadding(0, 0, 0, bottom)
+        } else {
             // 原型 body.m：手机 mast 只留品牌 + 搜索，避免交流群文案把按钮挤出屏
             findViewById<View>(R.id.brand_sub).visibility = View.GONE
             findViewById<View>(R.id.community_hint).visibility = View.GONE

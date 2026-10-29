@@ -11,11 +11,11 @@
     android:background="@color/bg"
     android:orientation="vertical">
 
-    <!-- mast：品牌 + 搜索 + 工具 -->
+    <!-- mast：品牌 + 搜索 + 工具（wrap_content：TV 时注入的 36dp paddingTop 不裁切按钮） -->
     <LinearLayout
         android:id="@+id/mast"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 

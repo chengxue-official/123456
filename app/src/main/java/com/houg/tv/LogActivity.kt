@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import com.houg.tv.net.HttpClientProvider
@@ -54,6 +55,16 @@ class LogActivity : AppCompatActivity() {
         infoText = findViewById(R.id.info_text)
         deviceInfoText = findViewById(R.id.device_info_text)
 
+        // 页面安全边距：手机 24dp / TV 64dp overscan（同 MainActivity.applyPageInsets）
+        val pageH = UiScale.pageH(this)
+        val logTop = findViewById<View>(R.id.log_top)
+        logTop.setPadding(pageH, UiScale.pageTop(this), pageH, logTop.paddingBottom)
+        deviceInfoText.setPadding(pageH, deviceInfoText.paddingTop, pageH, deviceInfoText.paddingBottom)
+        val logScroll = findViewById<View>(R.id.log_scroll)
+        logScroll.setPadding(pageH, logScroll.paddingTop, pageH, logScroll.paddingBottom)
+        // 底部信息条同时留出 TV 底部 overscan（pageTop 手机 14dp / TV 36dp）
+        infoText.setPadding(pageH, infoText.paddingTop, pageH, UiScale.pageTop(this))
+
         findViewById<View>(R.id.btn_back).setOnClickListener { finish() }
         findViewById<View>(R.id.btn_selfcheck).setOnClickListener { runSelfCheck() }
         findViewById<View>(R.id.btn_clear).setOnClickListener {
@@ -66,7 +77,15 @@ class LogActivity : AppCompatActivity() {
         }
         findViewById<View>(R.id.btn_share).setOnClickListener { shareLog() }
         findViewById<View>(R.id.btn_upload).setOnClickListener { uploadLog() }
-        findViewById<View>(R.id.btn_reset_identity).setOnClickListener { resetIdentity() }
+        // 重置身份等价卸载重装（丢弃全部本地特征），加二次确认防误触（与设置页一致）
+        findViewById<View>(R.id.btn_reset_identity).setOnClickListener {
+            AlertDialog.Builder(this)
+                .setMessage(R.string.set_reset_confirm)
+                .setPositiveButton(android.R.string.ok) { _, _ -> resetIdentity() }
+                .setNegativeButton(R.string.cancel, null)
+                .setCancelable(true)
+                .show()
+        }
 
         refresh()
     }

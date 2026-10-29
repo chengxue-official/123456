@@ -59,7 +59,8 @@ class RankActivity : AppCompatActivity() {
 
         // 页面安全边距：手机 24dp / TV 64dp overscan（同 MainActivity.applyPageInsets）
         val pageH = UiScale.pageH(this)
-        findViewById<View>(R.id.rank_top).setPadding(pageH, UiScale.pageTop(this), pageH, 0)
+        val rankTop = findViewById<View>(R.id.rank_top)
+        rankTop.setPadding(pageH, UiScale.pageTop(this), pageH, rankTop.paddingBottom)
         recycler.setPadding(pageH, recycler.paddingTop, pageH, recycler.paddingBottom)
 
         adapter = RankAdapter { drama -> openDetail(drama) }

@@ -7,6 +7,7 @@ import android.util.AttributeSet
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 
 /**
  * 内置软键盘（TV 用）：不依赖系统 IME。
@@ -113,11 +114,13 @@ class SoftKeyboard @JvmOverloads constructor(
         return tv
     }
 
-    /** 键背景：常态深灰圆角，聚焦态红底 + 白描边（遥控器焦点一眼可见）。 */
+    /** 键背景：常态 surface_light 圆角，聚焦态 accent 红底 + 白描边（遥控器焦点一眼可见）。 */
     private fun makeKeyBg(focused: Boolean): GradientDrawable {
         val d = GradientDrawable()
         d.cornerRadius = dp(5).toFloat()
-        d.setColor(Color.parseColor(if (focused) "#E53935" else "#242424"))
+        d.setColor(
+            ContextCompat.getColor(context, if (focused) R.color.accent else R.color.surface_light)
+        )
         if (focused) d.setStroke(dp(2), Color.WHITE)
         return d
     }
