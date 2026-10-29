@@ -61,6 +61,10 @@
             android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
 
         <activity
+            android:name="com.houg.tv.SettingsActivity"
+            android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
+
+        <activity
             android:name="com.houg.tv.LogActivity"
             android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
 

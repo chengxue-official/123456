@@ -1,0 +1,530 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  设置页（HOUG CINEMA）：顶栏 + 胶囊 Tab + 单 ScrollView 内四分页。
+  横向安全边距由 SettingsActivity 按 UiScale.pageH 代码注入（不用限定符，
+  原因见 MainActivity.applyPageInsets）。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/bg_cinema">
+
+    <!-- 顶栏 -->
+    <LinearLayout
+        android:id="@+id/settings_top"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/btn_back"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:gravity="center"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="@string/back"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:background="@drawable/button_bg"
+            android:focusable="true"
+            android:clickable="true" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:fontFamily="serif"
+            android:text="@string/settings_title"
+            android:textColor="@color/bone"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.12" />
+    </LinearLayout>
+
+    <!-- 胶囊 Tab 行 -->
+    <HorizontalScrollView
+        android:id="@+id/tab_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/tab_row"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp">
+
+            <TextView
+                android:id="@+id/tab_play"
+                style="@style/SettingsTab"
+                android:text="@string/settings_tab_play" />
+
+            <TextView
+                android:id="@+id/tab_look"
+                style="@style/SettingsTab"
+                android:layout_marginStart="10dp"
+                android:text="@string/settings_tab_look" />
+
+            <TextView
+                android:id="@+id/tab_rec"
+                style="@style/SettingsTab"
+                android:layout_marginStart="10dp"
+                android:text="@string/settings_tab_rec" />
+
+            <TextView
+                android:id="@+id/tab_sys"
+                style="@style/SettingsTab"
+                android:layout_marginStart="10dp"
+                android:text="@string/settings_tab_sys" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <ScrollView
+        android:id="@+id/settings_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/settings_body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingTop="14dp"
+            android:paddingBottom="28dp">
+
+            <!-- ============ 播放交互 ============ -->
+            <LinearLayout
+                android:id="@+id/page_play"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:id="@+id/grp_playback"
+                    style="@style/SettingsGroup"
+                    android:layout_marginBottom="16dp">
+
+                    <TextView
+                        style="@style/SettingsGroupTitle"
+                        android:text="@string/set_group_playback" />
+
+                    <TextView
+                        style="@style/SettingsGroupDesc"
+                        android:text="@string/set_group_playback_desc" />
+
+                    <!-- 清晰度 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/menu_quality" />
+                            <TextView style="@style/SettingsHint" android:text="@string/set_quality_hint" />
+                        </LinearLayout>
+                        <TextView
+                            android:id="@+id/opt_quality"
+                            style="@style/SettingsOpt"
+                            android:text="@string/quality_auto" />
+                    </LinearLayout>
+
+                    <!-- 解码方式 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/menu_decoder" />
+                            <TextView style="@style/SettingsHint" android:text="@string/set_decoder_hint" />
+                        </LinearLayout>
+                        <TextView
+                            android:id="@+id/opt_decoder"
+                            style="@style/SettingsOpt"
+                            android:text="@string/menu_decoder_hard" />
+                    </LinearLayout>
+
+                    <!-- 默认倍速 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/set_speed_label" />
+                            <TextView style="@style/SettingsHint" android:text="@string/set_speed_hint" />
+                        </LinearLayout>
+                        <TextView
+                            android:id="@+id/opt_speed"
+                            style="@style/SettingsOpt" />
+                    </LinearLayout>
+
+                    <!-- 快进步长 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/set_seek_label" />
+                            <TextView style="@style/SettingsHint" android:text="@string/set_seek_hint" />
+                        </LinearLayout>
+                        <TextView
+                            android:id="@+id/opt_seek"
+                            style="@style/SettingsOpt" />
+                    </LinearLayout>
+
+                    <!-- 画幅 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/set_aspect_label" />
+                            <TextView style="@style/SettingsHint" android:text="@string/set_aspect_hint" />
+                        </LinearLayout>
+                        <TextView
+                            android:id="@+id/opt_aspect"
+                            style="@style/SettingsOpt" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/grp_exp"
+                    style="@style/SettingsGroup">
+
+                    <TextView
+                        style="@style/SettingsGroupTitle"
+                        android:text="@string/set_group_exp" />
+
+                    <!-- 自动连播 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/set_auto_next" />
+                            <TextView style="@style/SettingsHint" android:text="@string/set_auto_next_hint" />
+                        </LinearLayout>
+                        <LinearLayout
+                            android:id="@+id/sw_auto_next"
+                            style="@style/SettingsSwitch">
+                            <FrameLayout style="@style/SettingsSwitchTrack">
+                                <View
+                                    android:layout_width="24dp"
+                                    android:layout_height="24dp"
+                                    android:background="@drawable/switch_knob" />
+                            </FrameLayout>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- 弹幕 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/set_danmaku" />
+                            <TextView style="@style/SettingsHint" android:text="@string/set_danmaku_hint" />
+                        </LinearLayout>
+                        <LinearLayout
+                            android:id="@+id/sw_danmaku"
+                            style="@style/SettingsSwitch">
+                            <FrameLayout style="@style/SettingsSwitchTrack">
+                                <View
+                                    android:layout_width="24dp"
+                                    android:layout_height="24dp"
+                                    android:background="@drawable/switch_knob" />
+                            </FrameLayout>
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- ============ 外观导航 ============ -->
+            <LinearLayout
+                android:id="@+id/page_look"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/grp_look"
+                    style="@style/SettingsGroup">
+
+                    <TextView
+                        style="@style/SettingsGroupTitle"
+                        android:text="@string/set_group_look" />
+
+                    <TextView
+                        style="@style/SettingsGroupDesc"
+                        android:text="@string/set_group_look_desc" />
+
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/set_uimode_label" />
+                            <TextView style="@style/SettingsHint" android:text="@string/set_uimode_hint" />
+                        </LinearLayout>
+                        <TextView
+                            android:id="@+id/opt_uimode"
+                            style="@style/SettingsOpt"
+                            android:text="@string/set_ui_auto" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- ============ 内容推荐 ============ -->
+            <LinearLayout
+                android:id="@+id/page_rec"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/grp_rec"
+                    style="@style/SettingsGroup">
+
+                    <TextView
+                        style="@style/SettingsGroupTitle"
+                        android:text="@string/set_group_rec" />
+
+                    <TextView
+                        style="@style/SettingsGroupDesc"
+                        android:text="@string/set_group_rec_desc" />
+
+                    <!-- 继续观看 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/section_continue" />
+                            <TextView style="@style/SettingsHint" android:text="@string/section_continue_hint" />
+                        </LinearLayout>
+                        <LinearLayout
+                            android:id="@+id/sw_rec_continue"
+                            style="@style/SettingsSwitch">
+                            <FrameLayout style="@style/SettingsSwitchTrack">
+                                <View
+                                    android:layout_width="24dp"
+                                    android:layout_height="24dp"
+                                    android:background="@drawable/switch_knob" />
+                            </FrameLayout>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- 今日热播 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/section_hot" />
+                            <TextView style="@style/SettingsHint" android:text="@string/section_hot_hint" />
+                        </LinearLayout>
+                        <LinearLayout
+                            android:id="@+id/sw_rec_hot"
+                            style="@style/SettingsSwitch">
+                            <FrameLayout style="@style/SettingsSwitchTrack">
+                                <View
+                                    android:layout_width="24dp"
+                                    android:layout_height="24dp"
+                                    android:background="@drawable/switch_knob" />
+                            </FrameLayout>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- 新上架 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/section_new" />
+                            <TextView style="@style/SettingsHint" android:text="@string/section_new_hint" />
+                        </LinearLayout>
+                        <LinearLayout
+                            android:id="@+id/sw_rec_new"
+                            style="@style/SettingsSwitch">
+                            <FrameLayout style="@style/SettingsSwitchTrack">
+                                <View
+                                    android:layout_width="24dp"
+                                    android:layout_height="24dp"
+                                    android:background="@drawable/switch_knob" />
+                            </FrameLayout>
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- ============ 系统高级 ============ -->
+            <LinearLayout
+                android:id="@+id/page_sys"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/grp_sys"
+                    style="@style/SettingsGroup"
+                    android:layout_marginBottom="16dp">
+
+                    <TextView
+                        style="@style/SettingsGroupTitle"
+                        android:text="@string/set_group_sys" />
+
+                    <!-- 清空观看历史 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <TextView
+                            style="@style/SettingsLabel"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/set_clear_history" />
+                        <TextView
+                            android:id="@+id/link_clear_history"
+                            style="@style/SettingsLink"
+                            android:text="@string/clear" />
+                    </LinearLayout>
+
+                    <!-- 清空收藏 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <TextView
+                            style="@style/SettingsLabel"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/set_clear_fav" />
+                        <TextView
+                            android:id="@+id/link_clear_fav"
+                            style="@style/SettingsLink"
+                            android:text="@string/clear" />
+                    </LinearLayout>
+
+                    <!-- 清空搜索记录 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <TextView
+                            style="@style/SettingsLabel"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/set_clear_search" />
+                        <TextView
+                            android:id="@+id/link_clear_search"
+                            style="@style/SettingsLink"
+                            android:text="@string/clear" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/grp_identity"
+                    style="@style/SettingsGroup"
+                    android:layout_marginBottom="16dp">
+
+                    <TextView
+                        style="@style/SettingsGroupTitle"
+                        android:text="@string/set_group_identity" />
+
+                    <TextView
+                        style="@style/SettingsGroupDesc"
+                        android:text="@string/set_group_identity_desc" />
+
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/log_reset_identity" />
+                            <TextView
+                                android:id="@+id/tv_devid"
+                                style="@style/SettingsHint"
+                                android:maxLines="1"
+                                android:ellipsize="end" />
+                        </LinearLayout>
+                        <TextView
+                            android:id="@+id/link_reset_identity"
+                            style="@style/SettingsLink"
+                            android:text="@string/set_reset_action" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/grp_about"
+                    style="@style/SettingsGroup">
+
+                    <TextView
+                        style="@style/SettingsGroupTitle"
+                        android:text="@string/set_group_about" />
+
+                    <!-- 版本号 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <TextView
+                            style="@style/SettingsLabel"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/set_version" />
+                        <TextView
+                            android:id="@+id/tv_version"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="14dp"
+                            android:textColor="@color/dim"
+                            android:textSize="13sp"
+                            android:letterSpacing="0.06" />
+                    </LinearLayout>
+
+                    <!-- 检查更新 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <TextView
+                            style="@style/SettingsLabel"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/nav_update" />
+                        <TextView
+                            android:id="@+id/link_update"
+                            style="@style/SettingsLink"
+                            android:text="@string/nav_update" />
+                    </LinearLayout>
+
+                    <!-- 调试日志 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <TextView
+                            style="@style/SettingsLabel"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/nav_log" />
+                        <TextView
+                            android:id="@+id/link_log"
+                            style="@style/SettingsLink"
+                            android:text="@string/set_open_action" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tv_footer"
+                        style="@style/SettingsGroupDesc"
+                        android:layout_marginTop="12dp"
+                        android:layout_marginBottom="6dp" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

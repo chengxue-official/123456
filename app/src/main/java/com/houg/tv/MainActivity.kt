@@ -47,6 +47,8 @@ class MainActivity : AppCompatActivity() {
     private var loading = false
     /** Hero 出现后把首焦点交给「立即播放」，只做一次 */
     private var heroFocused = false
+    /** 今日热播只拉一次；设置里关掉再打开时补拉 */
+    private var hotRequested = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,9 +81,11 @@ class MainActivity : AppCompatActivity() {
         setupMast()
         setupDock()
 
-        adapter.setContinue(App.watchHistory.list().take(3))
-        loadHot()
-        loadPage(true)
+        if (recEnabled(SettingsActivity.REC_CONTINUE)) {
+            adapter.setContinue(App.watchHistory.list().take(3))
+        }
+        if (recEnabled(SettingsActivity.REC_HOT)) loadHot()
+        if (recEnabled(SettingsActivity.REC_NEW)) loadPage(true)
     }
 
     /**
@@ -166,36 +170,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btn_update).setOnClickListener {
             UpdateDialog.start(this, scope)
         }
-        setupUiModeButton()
         // 焦点微放大：遥控器进出焦点时有反馈，避免「只有描边变化」的死板感
-        listOf(R.id.btn_search, R.id.btn_update, R.id.btn_uimode)
+        listOf(R.id.btn_search, R.id.btn_update)
             .forEach { attachFocusScale(findViewById(it)) }
-    }
-
-    /**
-     * UI 形态兜底按钮：电视被误判成手机时（VIDAA 等非 Android TV 系统判不出），
-     * 手动切「手机/电视」形态。选择持久化后 recreate 生效（影响 attachBaseContext
-     * 的 density warp 与窗口方向）。SettingsActivity 落地后迁移过去。
-     */
-    private fun setupUiModeButton() {
-        val btn = findViewById<View>(R.id.btn_uimode)
-        val mode = UiScale.uiMode(this)
-        btn.setOnClickListener {
-            val options = arrayOf("自动检测", "电视界面", "手机界面")
-            val values = arrayOf(UiScale.MODE_AUTO, UiScale.MODE_TV, UiScale.MODE_PHONE)
-            val checked = values.indexOf(mode).coerceAtLeast(0)
-            AlertDialog.Builder(this)
-                .setTitle("切换界面形态")
-                .setSingleChoiceItems(options, checked) { dialog, which ->
-                    dialog.dismiss()
-                    if (values[which] != mode) {
-                        UiScale.setUiMode(this, values[which])
-                        recreate()
-                    }
-                }
-                .setNegativeButton("取消", null)
-                .show()
-        }
     }
 
     /** 聚焦放大到 1.06 倍、失焦回落，并置顶避免被相邻卡片压住 */
@@ -230,8 +207,8 @@ class MainActivity : AppCompatActivity() {
                         .putExtra(HistoryActivity.EXTRA_TAB, HistoryActivity.TAB_HISTORY)
                 )
             },
-            // 临时入口：SettingsActivity 未落地前先进日志页，落地后替换
-            "settings" to { startActivity(Intent(this, LogActivity::class.java)) }
+            // 设置入口：播放偏好 / 外观形态 / 内容推荐 / 系统高级
+            "settings" to { startActivity(Intent(this, SettingsActivity::class.java)) }
         )
         data class DockEntry(val key: String, val itemId: Int, val labelId: Int, val barId: Int)
         listOf(
@@ -264,6 +241,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadPage(reset: Boolean) {
         if (loading) return
+        if (!recEnabled(SettingsActivity.REC_NEW)) return
         loading = true
         val offset = if (reset) 0 else nextOffset
         val session = if (reset) "" else sessionId
@@ -306,6 +284,9 @@ class MainActivity : AppCompatActivity() {
 
     /** 今日热播：用热播榜第一页前 5 名；失败静默，不挡首页主体 */
     private fun loadHot() {
+        if (hotRequested) return
+        if (!recEnabled(SettingsActivity.REC_HOT)) return
+        hotRequested = true
         scope.launch {
             try {
                 val page = withContext(Dispatchers.IO) {
@@ -350,8 +331,48 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         UiScale.applyImmersive(this)
-        // 详情页可能改了进度/收藏，回来刷新继续观看（内部按 key 去重，无变化不重绘）
-        adapter.setContinue(App.watchHistory.list().take(3))
+        // 详情页可能改了进度/收藏，设置页可能改了推荐开关，回来统一刷新
+        applyRecPreferences()
+    }
+
+    /* ==================== 内容推荐开关 ==================== */
+
+    private fun uiPrefs() = getSharedPreferences(SettingsActivity.UI_PREFS, MODE_PRIVATE)
+
+    private fun recEnabled(key: String) = uiPrefs().getBoolean(key, true)
+
+    /**
+     * 设置页「内容推荐」三个开关回到前台时生效：
+     * 继续观看只看历史；热播/新上架关掉就清空且不再请求，重新打开补一次。
+     */
+    private fun applyRecPreferences() {
+        adapter.setContinue(
+            if (recEnabled(SettingsActivity.REC_CONTINUE)) {
+                App.watchHistory.list().take(3)
+            } else {
+                emptyList()
+            }
+        )
+
+        if (!recEnabled(SettingsActivity.REC_HOT)) {
+            adapter.setHot(emptyList())
+            hotRequested = false
+        } else if (!hotRequested) {
+            loadHot()
+        }
+
+        if (!recEnabled(SettingsActivity.REC_NEW)) {
+            if (adapter.currentCatalog().isNotEmpty()) {
+                adapter.submitCatalog(emptyList())
+                adapter.setHero(null)
+                nextOffset = 0
+                sessionId = ""
+                hasMore = false
+                statusText.visibility = View.GONE
+            }
+        } else if (adapter.currentCatalog().isEmpty() && !loading) {
+            loadPage(true)
+        }
     }
 
     override fun onDestroy() {

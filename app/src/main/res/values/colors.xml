@@ -36,4 +36,7 @@
     <color name="panel_focus">#2A211B</color>
     <color name="scrim">#CC070606</color>
     <color name="scrim_soft">#A6070606</color>
+
+    <!-- 设置页开关：关闭态滑块色（开启态用 accent） -->
+    <color name="switch_knob_off">#4A443D</color>
 </resources>

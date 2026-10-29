@@ -88,18 +88,6 @@
             android:focusable="true"
             android:focusableInTouchMode="true" />
 
-        <!-- 临时：界面形态切换（TV/手机），SettingsActivity 落地后移除 -->
-        <ImageButton
-            android:id="@+id/btn_uimode"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_marginStart="10dp"
-            android:background="@drawable/tool_icon_bg"
-            android:src="@drawable/ic_nav_recommend"
-            android:scaleType="center"
-            android:contentDescription="@string/nav_log"
-            android:focusable="true"
-            android:focusableInTouchMode="true" />
     </LinearLayout>
 
     <!-- 中央内容流 -->

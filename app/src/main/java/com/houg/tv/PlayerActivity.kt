@@ -2397,12 +2397,17 @@ class PlayerActivity : AppCompatActivity() {
         /** 与 vid_list 按下标一一对应的集号列表 */
         const val EXTRA_EP_LIST = "ep_list"
 
-        private const val PREFS = "player_prefs"
-        private const val PREF_ASPECT = "aspect_mode"
-        private const val PREF_QUALITY = "quality_mode"
-        private const val PREF_SPEED = "playback_speed"
-        private const val PREF_DANMAKU = "danmaku_enabled"
-        private const val PREF_DECODER_SOFT = "decoder_soft"
+        /** 播放偏好存储（SettingsActivity 与播放页共用，s6 由播放页读取） */
+        const val PREFS = "player_prefs"
+        const val PREF_ASPECT = "aspect_mode"
+        const val PREF_QUALITY = "quality_mode"
+        const val PREF_SPEED = "playback_speed"
+        const val PREF_DANMAKU = "danmaku_enabled"
+        const val PREF_DECODER_SOFT = "decoder_soft"
+        /** 遥控快进/快退基础步长（ms），设置页可调，默认 15 秒 */
+        const val PREF_SEEK_STEP = "seek_step"
+        /** 播完一集是否自动进入下一集 */
+        const val PREF_AUTO_NEXT = "auto_next"
         /** 弹幕窗口长度（ms） */
         private const val DANMAKU_WINDOW_MS = 30000L
 
@@ -2468,7 +2473,7 @@ class PlayerActivity : AppCompatActivity() {
         private const val STARTUP_MEDIA_BUDGET_MS = 30_000L
 
         /** 倍速档位 */
-        private val SPEEDS = floatArrayOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
+        val SPEEDS = floatArrayOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 
         /** 画幅模式：适应（默认，保持比例）/ 拉伸 / 原始 / 填充 */
         const val ASPECT_FIT = 0

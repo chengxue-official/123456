@@ -100,4 +100,123 @@
         <item name="android:focusable">true</item>
         <item name="android:clickable">true</item>
     </style>
+
+    <!-- ===== 设置页（HOUG CINEMA） ===== -->
+
+    <!-- 分组面板：细描边 + 微渐变 -->
+    <style name="SettingsGroup">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:background">@drawable/settings_grp_bg</item>
+        <item name="android:paddingStart">18dp</item>
+        <item name="android:paddingEnd">18dp</item>
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">8dp</item>
+    </style>
+
+    <!-- 分组标题（衬线小标） -->
+    <style name="SettingsGroupTitle">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">serif</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/faint</item>
+        <item name="android:letterSpacing">0.26</item>
+    </style>
+
+    <style name="SettingsGroupDesc">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">4dp</item>
+        <item name="android:textSize">10sp</item>
+        <item name="android:textColor">@color/faint</item>
+        <item name="android:letterSpacing">0.1</item>
+    </style>
+
+    <!-- 设置行 -->
+    <style name="SettingsRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">56dp</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+    </style>
+
+    <style name="SettingsLabel">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/bone</item>
+        <item name="android:letterSpacing">0.06</item>
+    </style>
+
+    <style name="SettingsHint">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">3dp</item>
+        <item name="android:textSize">10sp</item>
+        <item name="android:textColor">@color/faint</item>
+        <item name="android:letterSpacing">0.06</item>
+    </style>
+
+    <!-- 右侧取值胶囊 -->
+    <style name="SettingsOpt">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">38dp</item>
+        <item name="android:minWidth">76dp</item>
+        <item name="android:layout_marginStart">14dp</item>
+        <item name="android:background">@drawable/settings_opt_bg</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">14dp</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/settings_ctrl_text</item>
+        <item name="android:letterSpacing">0.06</item>
+        <item name="android:gravity">center</item>
+        <item name="android:focusable">true</item>
+        <item name="android:clickable">true</item>
+    </style>
+
+    <!-- 动作按钮（与胶囊同视觉，稍宽） -->
+    <style name="SettingsLink" parent="SettingsOpt">
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+    </style>
+
+    <!-- 顶部胶囊 Tab -->
+    <style name="SettingsTab">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">38dp</item>
+        <item name="android:background">@drawable/settings_tab_bg</item>
+        <item name="android:paddingStart">18dp</item>
+        <item name="android:paddingEnd">18dp</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/settings_tab_text</item>
+        <item name="android:letterSpacing">0.1</item>
+        <item name="android:gravity">center</item>
+        <item name="android:focusable">true</item>
+        <item name="android:clickable">true</item>
+    </style>
+
+    <!-- 自定义开关（外层焦点框） -->
+    <style name="SettingsSwitch">
+        <item name="android:layout_width">64dp</item>
+        <item name="android:layout_height">34dp</item>
+        <item name="android:layout_marginStart">14dp</item>
+        <item name="android:background">@drawable/settings_sw_focus</item>
+        <item name="android:padding">3dp</item>
+        <item name="android:focusable">true</item>
+        <item name="android:clickable">true</item>
+    </style>
+
+    <!-- 开关轨道 -->
+    <style name="SettingsSwitchTrack">
+        <item name="android:layout_width">58dp</item>
+        <item name="android:layout_height">28dp</item>
+        <item name="android:padding">2dp</item>
+        <item name="android:background">@drawable/switch_track_off</item>
+        <item name="android:clipToPadding">false</item>
+    </style>
 </resources>
