@@ -399,12 +399,15 @@ class PlayerActivity : AppCompatActivity() {
                 }
                 // 二级：切软解重试一次
                 if (vid != null && autoSoftFailoverVid != vid && !decoderSoft) {
-                    // 守卫（B9）：已取到 bytevc1(HEVC) 且高度较高时，切软解必然
-                    // OutOfMemoryError（线上 1.8GB 内存电视实测），不再白切一次，
-                    // 直接给可读错误终态。低档位（≤480p）软解吃得下，仍允许自救。
-                    if (currentVariantCodec.contains("bytevc1") && currentVariantHeight > 480) {
+                    // 守卫（B9）：低内存设备软解高分辨率 HEVC 预期
+                    // OutOfMemoryError（线上 1994MB 的 VIDAA 电视实测），不再白切一次，
+                    // 直接给可读错误终态。
+                    // 线上 6560MB 的 DWIN-380P 软解 1924p 能 READY（日志 18:58:31）——
+                    // 守卫按内存放宽：总内存 ≥3GB 允许高分辨率软解自救，播着卡也比报错强；
+                    // 读不到内存（-1）仍按低内存保守拒绝。低档位（≤480p）始终允许自救。
+                    if (currentVariantCodec.contains("bytevc1") && currentVariantHeight > 480 && !softDecodeViable()) {
                         AppLog.e("PlayerActivity", "HEVC " + currentVariantHeight
-                                + "p 软解预期 OOM（已重取流仍下发 HEVC），跳过软解自救 vid=" + vid, null)
+                                + "p 软解预期 OOM（低内存设备，已重取流仍下发 HEVC），跳过软解自救 vid=" + vid, null)
                         showError(getString(R.string.decoder_hevc_soft_oom))
                         return
                     }
@@ -433,6 +436,15 @@ class PlayerActivity : AppCompatActivity() {
             PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED -> true
             else -> false
         }
+    }
+
+    /**
+     * 高分辨率软解自救是否值得尝试：总内存 ≥3GB（线上 6560MB 的 DWIN-380P
+     * 软解 1924p HEVC 能 READY，日志 18:58:31）；读不到内存（-1）时保守拒绝。
+     * 阈值依据：1994MB 的 VIDAA 电视软解 1080p 实测 OOM，3769MB 的小米电视余量充足。
+     */
+    private fun softDecodeViable(): Boolean {
+        return DeviceInfo.totalMemoryMb() >= 3 * 1024
     }
 
     /**
