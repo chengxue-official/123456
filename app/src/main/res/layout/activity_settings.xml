@@ -286,6 +286,38 @@
                             style="@style/SettingsOpt"
                             android:text="@string/set_ui_auto" />
                     </LinearLayout>
+
+                    <!-- 字体大小（全应用文字整体缩放） -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/set_font_label" />
+                            <TextView style="@style/SettingsHint" android:text="@string/set_font_hint" />
+                        </LinearLayout>
+                        <TextView
+                            android:id="@+id/opt_font"
+                            style="@style/SettingsOpt"
+                            android:text="@string/size_standard" />
+                    </LinearLayout>
+
+                    <!-- 封面大小（首页/列表封面卡片整体缩放） -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/set_cover_label" />
+                            <TextView style="@style/SettingsHint" android:text="@string/set_cover_hint" />
+                        </LinearLayout>
+                        <TextView
+                            android:id="@+id/opt_cover"
+                            style="@style/SettingsOpt"
+                            android:text="@string/size_standard" />
+                    </LinearLayout>
                 </LinearLayout>
             </LinearLayout>
 

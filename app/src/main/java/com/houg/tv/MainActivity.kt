@@ -68,6 +68,9 @@ class MainActivity : AppCompatActivity() {
     private var heroFocused = false
     /** 今日热播只拉一次；设置里关掉再打开时补拉 */
     private var hotRequested = false
+    /** 设置页「字体大小 / 封面大小」的当前值：用于回首页时判断是否需要重建 */
+    private var fontScaleApplied = 0f
+    private var coverScaleApplied = 0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,6 +83,10 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.status_text)
         recycler = findViewById(R.id.recycler)
         clockText = findViewById(R.id.clock_text)
+
+        // 记录本次创建时的字号/封面系数（onResume 据此判断设置页是否改过）
+        fontScaleApplied = UiScale.userFontBoost(this)
+        coverScaleApplied = UiScale.userCoverScale(this)
 
         applyPageInsets()
 
@@ -361,6 +368,16 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         UiScale.applyImmersive(this)
+        // 设置页改了字体/封面大小：字号必须重建 Resources 才生效，封面列数同理，
+        // 直接重建本页（onCreate 会重新读取新系数，不会二次触发）。
+        val font = UiScale.userFontBoost(this)
+        val cover = UiScale.userCoverScale(this)
+        if (font != fontScaleApplied || cover != coverScaleApplied) {
+            fontScaleApplied = font
+            coverScaleApplied = cover
+            recreate()
+            return
+        }
         // 时钟：回到前台立刻对齐一次，再交回每分钟自调度
         clockHandler.removeCallbacks(clockTick)
         clockTick.run()

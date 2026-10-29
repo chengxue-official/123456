@@ -216,6 +216,61 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
         }
+
+        bindFont()
+        bindCover()
+    }
+
+    /** 字体大小：小/标准/大/特大（0.9 / 1.0 / 1.15 / 1.3），recreate 后全应用生效 */
+    private fun bindFont() {
+        val opt = findViewById<TextView>(R.id.opt_font)
+        val labels = arrayOf(
+            getString(R.string.size_small), getString(R.string.size_standard),
+            getString(R.string.size_large), getString(R.string.size_xlarge)
+        )
+        val scales = UiScale.FONT_SCALES
+
+        fun currentIndex(): Int {
+            val cur = UiScale.userFontBoost(this@SettingsActivity)
+            return scales.indexOfFirst { it == cur }.let { if (it >= 0) it else 1 }
+        }
+
+        opt.text = labels[currentIndex()]
+        opt.setOnClickListener {
+            val cur = currentIndex()
+            pickOption(getString(R.string.set_font_label), labels, cur) { which ->
+                if (which != cur) {
+                    UiScale.setUserFontBoost(this@SettingsActivity, scales[which])
+                    recreate()
+                }
+            }
+        }
+    }
+
+    /** 封面大小：小/标准/大（0.85 / 1.0 / 1.2），首页列数随之自动适配 */
+    private fun bindCover() {
+        val opt = findViewById<TextView>(R.id.opt_cover)
+        val labels = arrayOf(
+            getString(R.string.size_small), getString(R.string.size_standard),
+            getString(R.string.size_large)
+        )
+        val scales = UiScale.COVER_SCALES
+
+        fun currentIndex(): Int {
+            val cur = UiScale.userCoverScale(this@SettingsActivity)
+            return scales.indexOfFirst { it == cur }.let { if (it >= 0) it else 1 }
+        }
+
+        opt.text = labels[currentIndex()]
+        opt.setOnClickListener {
+            val cur = currentIndex()
+            pickOption(getString(R.string.set_cover_label), labels, cur) { which ->
+                if (which != cur) {
+                    UiScale.setUserCoverScale(this@SettingsActivity, scales[which])
+                    recreate()
+                }
+            }
+        }
     }
 
     /* ==================== 内容推荐 ==================== */

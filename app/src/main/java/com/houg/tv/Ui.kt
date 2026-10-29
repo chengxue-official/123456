@@ -37,6 +37,15 @@ object UiScale {
 
     private const val PREFS = "houg_ui"
     private const val KEY_UI_MODE = "ui_mode"
+    /** 用户自定义字号系数（0.9 / 1.0 / 1.15 / 1.3，默认 1.0） */
+    private const val KEY_FONT_USER = "font_user"
+    /** 用户自定义封面系数（0.85 / 1.0 / 1.2，默认 1.0） */
+    private const val KEY_COVER_USER = "cover_user"
+
+    /** 字号档位（设置页顺序展示） */
+    val FONT_SCALES = floatArrayOf(0.9f, 1f, 1.15f, 1.3f)
+    /** 封面档位（设置页顺序展示） */
+    val COVER_SCALES = floatArrayOf(0.85f, 1f, 1.2f)
 
     /** 覆盖值缓存：isTv 会被 softenTouchFocus 逐 View 高频调用，不能每次读 prefs */
     private var cachedMode: String? = null
@@ -117,12 +126,38 @@ object UiScale {
     /** 网格卡片间距（TV 14dp；手机 12dp） */
     fun gapPx(context: Context): Int = px(context, R.dimen.grid_gap, R.dimen.grid_gap_tv)
 
-    /** 字号增益系数（TV 1.05；手机 1.0） */
+    /** 字号增益系数（TV 1.05 / 手机 1.0，再乘用户自定义字号系数） */
     fun fontBoost(context: Context): Float =
-        context.resources.getFloat(if (isTv(context)) R.dimen.font_boost_tv else R.dimen.font_boost)
+        context.resources.getFloat(if (isTv(context)) R.dimen.font_boost_tv else R.dimen.font_boost) *
+            userFontBoost(context)
 
-    /** 封面卡片目标格宽（TV 150dp / 手机 110dp：411dp 屏宽约出 3 列） */
-    fun coverWidthDp(context: Context): Float = if (isTv(context)) 150f else 110f
+    /** 用户自定义字号系数（设置页「字体大小」；默认 1.0） */
+    fun userFontBoost(context: Context): Float =
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getFloat(KEY_FONT_USER, 1f)
+
+    fun setUserFontBoost(context: Context, scale: Float) {
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putFloat(KEY_FONT_USER, scale).apply()
+    }
+
+    /** 用户自定义封面系数（设置页「封面大小」；默认 1.0） */
+    fun userCoverScale(context: Context): Float =
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getFloat(KEY_COVER_USER, 1f)
+
+    fun setUserCoverScale(context: Context, scale: Float) {
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putFloat(KEY_COVER_USER, scale).apply()
+    }
+
+    /** 封面卡片目标格宽（TV 150dp / 手机 110dp：411dp 屏宽约出 3 列，再乘用户封面系数） */
+    fun coverWidthDp(context: Context): Float =
+        (if (isTv(context)) 150f else 110f) * userCoverScale(context)
 
     /** 选集格目标宽（TV 100dp / 手机 88dp） */
     fun episodeWidthDp(context: Context): Float = if (isTv(context)) 100f else 88f
@@ -139,7 +174,17 @@ object UiScale {
         // 手机竖屏刷短剧：直接沿用系统 density（如 411×914dp）。
         // 1280×720 画布公式是横屏 16:9 假设，竖屏 1080×2400 下
         // min(1080/1280, 2400/720)=0.84 会得到 1280dp 宽的离谱画布（主界面算成 8 列）。
-        if (!isTv(base)) return base
+        // 但设置页「字体大小」需要在这里生效：只有用户改过字号（系数 ≠ 1）才包一层，
+        // 未改动的用户仍拿到原始 Context，行为与旧版完全一致。
+        if (!isTv(base)) {
+            val boost = userFontBoost(base)
+            if (boost == 1f) return base
+            val cfg = Configuration(base.resources.configuration)
+            val ctx = base.createConfigurationContext(cfg)
+            ctx.resources.displayMetrics.scaledDensity =
+                ctx.resources.displayMetrics.density * cfg.fontScale * boost
+            return ctx
+        }
         val cfg = Configuration(base.resources.configuration)
         val dm = base.resources.displayMetrics
         // k 只由物理分辨率决定：长边对 BASE_W、短边对 BASE_H，与 attach 时的窗口方向无关。

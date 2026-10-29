@@ -1,6 +1,7 @@
 package com.houg.tv
 
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -104,6 +105,11 @@ class PlayerActivity : AppCompatActivity() {
     /** 当前画幅模式下标，见 ASPECT_MODES */
     private var aspectMode = 0
     /**
+     * 手机端「翻转」：true = 横屏播放（横版画幅短剧），false = 竖屏（默认）。
+     * 落盘 player_prefs，下次进播放页沿用；TV 端不提供该项（电视本就横屏）。
+     */
+    private var landscapeOn = false
+    /**
      * 当前清晰度档位下标，见 QUALITY_MODES。
      * 「自动」沿用设备能力判定（低端设备压 720），其余档位由用户显式指定上限。
      */
@@ -187,6 +193,7 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var durationText: TextView
     private lateinit var toastHint: TextView
     private lateinit var menuFill: TextView
+    private lateinit var menuRotate: TextView
     private lateinit var menuQuality: TextView
     private lateinit var menuDanmaku: TextView
     private lateinit var menuSpeed: TextView
@@ -517,6 +524,7 @@ class PlayerActivity : AppCompatActivity() {
         durationText = findViewById(R.id.duration_text)
         toastHint = findViewById(R.id.toast_hint)
         menuFill = findViewById(R.id.menu_fill)
+        menuRotate = findViewById(R.id.menu_rotate)
         menuQuality = findViewById(R.id.menu_quality)
         menuDanmaku = findViewById(R.id.menu_danmaku)
         menuSpeed = findViewById(R.id.menu_speed)
@@ -564,6 +572,11 @@ class PlayerActivity : AppCompatActivity() {
             .coerceIn(0, QUALITY_MODES.size - 1)
         seekStepMs = prefs.getLong(PREF_SEEK_STEP, QUICK_SEEK_MS)
         autoNext = prefs.getBoolean(PREF_AUTO_NEXT, true)
+        // 翻转：沿用上次在播放页选的横/竖屏（横版画幅短剧可直接以横屏进入）
+        landscapeOn = prefs.getBoolean(PREF_LANDSCAPE, false)
+        if (landscapeOn && !UiScale.isTv(this)) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
 
         player = buildPlayer()
         player!!.setVideoSurfaceView(surfaceView)
@@ -579,6 +592,7 @@ class PlayerActivity : AppCompatActivity() {
         player!!.addListener(playerListener)
 
         updateAspectLabel()
+        updateRotateLabel()
         updateQualityLabel()
         updateSpeedLabel()
         updateDanmakuLabel()
@@ -603,6 +617,9 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun bindControls() {
         menuFill.setOnClickListener { cycleAspect() }
+        menuRotate.setOnClickListener { toggleRotate() }
+        // 翻转只对手机有意义（电视固定横屏摆放），TV 端直接隐藏该项
+        if (UiScale.isTv(this)) menuRotate.visibility = View.GONE
         menuQuality.setOnClickListener { cycleQuality() }
         menuDanmaku.setOnClickListener { toggleDanmaku() }
         menuSpeed.setOnClickListener { cycleSpeed() }
@@ -1112,6 +1129,28 @@ class PlayerActivity : AppCompatActivity() {
     /** 更新画幅菜单文案为「画面填充：模式名」。 */
     private fun updateAspectLabel() {
         menuFill.text = getString(R.string.menu_fill) + "：" + getString(ASPECT_MODES[aspectMode].labelRes)
+    }
+
+    /**
+     * 切换横/竖屏（手机专用）：大部分短剧是竖屏，但横版画幅的片子需要横屏看。
+     * manifest 已声明 orientation|screenSize 不重建 Activity，切方向不会打断播放。
+     * 选择落盘，下次进播放页沿用；退出后仍是用户上次选的形态。
+     */
+    private fun toggleRotate() {
+        landscapeOn = !landscapeOn
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(PREF_LANDSCAPE, landscapeOn).apply()
+        requestedOrientation = if (landscapeOn)
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        updateRotateLabel()
+        toast(getString(R.string.menu_rotate) + "：" +
+                getString(if (landscapeOn) R.string.rotate_landscape else R.string.rotate_portrait))
+    }
+
+    /** 更新翻转菜单文案为「翻转：当前形态」。 */
+    private fun updateRotateLabel() {
+        menuRotate.text = getString(R.string.menu_rotate) + "：" +
+                getString(if (landscapeOn) R.string.rotate_landscape else R.string.rotate_portrait)
     }
 
     /**
@@ -1977,6 +2016,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun showMenu() {
         menuPanel.visibility = View.VISIBLE
         updateAspectLabel()
+        updateRotateLabel()
         updateQualityLabel()
         updateSpeedLabel()
         updateDanmakuLabel()
@@ -2428,6 +2468,8 @@ class PlayerActivity : AppCompatActivity() {
         /** 播放偏好存储（SettingsActivity 与播放页共用，s6 由播放页读取） */
         const val PREFS = "player_prefs"
         const val PREF_ASPECT = "aspect_mode"
+        /** 手机播放页「翻转」：true = 横屏播放（横版画幅短剧） */
+        const val PREF_LANDSCAPE = "player_landscape"
         const val PREF_QUALITY = "quality_mode"
         const val PREF_SPEED = "playback_speed"
         const val PREF_DANMAKU = "danmaku_enabled"
