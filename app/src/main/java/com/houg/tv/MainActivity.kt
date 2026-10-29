@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Rect
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
 import android.widget.TextView
@@ -21,6 +23,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 首页（HOUG CINEMA 影院流）：
@@ -41,6 +46,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var progress: View
     private lateinit var statusText: TextView
 
+    /* ==================== 首页时钟 ==================== */
+
+    private lateinit var clockText: TextView
+    private val clockHandler = Handler(Looper.getMainLooper())
+    private val clockFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+
+    /** 每分钟刷新一次：延时对齐到整分，不逐秒空转 */
+    private val clockTick = object : Runnable {
+        override fun run() {
+            clockText.text = clockFormat.format(Date())
+            clockHandler.postDelayed(this, 60_000L - System.currentTimeMillis() % 60_000L)
+        }
+    }
+
     private var nextOffset = 0
     private var sessionId = ""
     private var hasMore = false
@@ -60,6 +79,7 @@ class MainActivity : AppCompatActivity() {
         progress = findViewById(R.id.progress)
         statusText = findViewById(R.id.status_text)
         recycler = findViewById(R.id.recycler)
+        clockText = findViewById(R.id.clock_text)
 
         applyPageInsets()
 
@@ -341,8 +361,17 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         UiScale.applyImmersive(this)
+        // 时钟：回到前台立刻对齐一次，再交回每分钟自调度
+        clockHandler.removeCallbacks(clockTick)
+        clockTick.run()
         // 详情页可能改了进度/收藏，设置页可能改了推荐开关，回来统一刷新
         applyRecPreferences()
+    }
+
+    override fun onPause() {
+        // 离开首页就停表，避免后台空转
+        clockHandler.removeCallbacks(clockTick)
+        super.onPause()
     }
 
     /* ==================== 内容推荐开关 ==================== */

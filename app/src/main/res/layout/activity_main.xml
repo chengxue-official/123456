@@ -88,6 +88,18 @@
             android:focusable="true"
             android:focusableInTouchMode="true" />
 
+        <!-- 当前时间：TV 全屏沉浸式下没有系统状态栏，时钟放在 mast 最右侧 -->
+        <TextView
+            android:id="@+id/clock_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:fontFamily="monospace"
+            android:textSize="13sp"
+            android:textColor="@color/dim"
+            android:letterSpacing="0.06"
+            android:includeFontPadding="false" />
+
     </LinearLayout>
 
     <!-- 中央内容流 -->
