@@ -2,6 +2,7 @@ package com.houg.tv
 
 import android.content.Context
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -2015,6 +2016,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun showMenu() {
         menuPanel.visibility = View.VISIBLE
+        fitMenuPanel()
         updateAspectLabel()
         updateRotateLabel()
         updateQualityLabel()
@@ -2023,6 +2025,53 @@ class PlayerActivity : AppCompatActivity() {
         updateDecoderLabel()
         // 触屏设备不抢焦点，避免菜单首项出现红框高亮（TV 需焦点才能用遥控器选择）
         if (UiScale.isTv(this)) menuFill.post { menuFill.requestFocus() }
+    }
+
+    /**
+     * 手机横屏（翻转看横版画幅短剧）时屏幕高度只剩约 390dp，菜单 8 项
+     * （触控下限 48dp + 间距）约 540dp 会溢出到屏幕外，底部「退出播放」点不到。
+     * 这里给面板限高到可用区域，让外层 ScrollView 承担滚动。
+     *
+     * 只在手机横屏生效：TV 是 1280×720dp 画布（面板约 540dp 放得下）、
+     * 手机竖屏高度约 870dp，都无需限高，保持 wrap_content 与旧版行为一致。
+     */
+    private fun fitMenuPanel() {
+        val lp = menuPanel.layoutParams as FrameLayout.LayoutParams
+        val landscapePhone = !UiScale.isTv(this) &&
+                resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        // 屏高(px) - 顶部 72dp - 底部留 12dp；下限 180dp 保证至少能看到几项
+        val want = if (landscapePhone) {
+            (resources.displayMetrics.heightPixels - dp(84)).coerceAtLeast(dp(180))
+        } else FrameLayout.LayoutParams.WRAP_CONTENT
+        if (lp.height != want) {
+            lp.height = want
+            menuPanel.layoutParams = lp
+        }
+    }
+
+    /**
+     * 翻转不改 configChanges 声明（manifest 已含 orientation|screenSize），
+     * Activity 不重建、播放不中断，但面板尺寸要按新方向重新适配。
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (menuPanel.visibility == View.VISIBLE) fitMenuPanel()
+        if (::epPickerRoot.isInitialized && epPickerRoot.visibility == View.VISIBLE) fitEpPanel()
+    }
+
+    /** 选集面板同样限高（手机横屏 20 格网格 + 控制行远超横屏高度）。 */
+    private fun fitEpPanel() {
+        val panel = findViewById<View>(R.id.ep_picker_panel)
+        val lp = panel.layoutParams as FrameLayout.LayoutParams
+        val landscapePhone = !UiScale.isTv(this) &&
+                resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val want = if (landscapePhone) {
+            (resources.displayMetrics.heightPixels - dp(16)).coerceAtLeast(dp(200))
+        } else FrameLayout.LayoutParams.WRAP_CONTENT
+        if (lp.height != want) {
+            lp.height = want
+            panel.layoutParams = lp
+        }
     }
 
     private fun hideMenu() {
@@ -2243,6 +2292,8 @@ class PlayerActivity : AppCompatActivity() {
         epGroupStart = (currentPos / EP_PAGE_SIZE) * EP_PAGE_SIZE
         buildEpisodeGrid()
         epPickerRoot.visibility = View.VISIBLE
+        // 手机横屏时面板内容高于屏幕：限高后由 ScrollView 滚动（竖屏/TV 不限）
+        fitEpPanel()
         // 焦点落到当前集格子（若在本页），否则落到网格第一个
         epGrid.post {
             val cur = epCells.getOrNull(currentPos - epGroupStart)

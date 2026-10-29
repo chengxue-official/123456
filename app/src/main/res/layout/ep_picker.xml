@@ -10,15 +10,23 @@
     android:focusable="true"
     android:visibility="gone">
 
-    <LinearLayout
+    <!-- ScrollView：手机横屏（翻转后）高度约 390dp，面板内容约 500dp 会被上下裁切；
+         PlayerActivity.fitEpPanel 只在手机横屏时限高滚动，竖屏/TV 行为不变。 -->
+    <ScrollView
         android:id="@+id/ep_picker_panel"
         android:layout_width="560dp"
         android:layout_height="wrap_content"
         android:layout_gravity="end|center_vertical"
         android:layout_marginEnd="36dp"
-        android:orientation="vertical"
+        android:scrollbars="none"
         android:background="@drawable/panel_bg"
         android:padding="24dp">
+
+        <LinearLayout
+            android:id="@+id/ep_picker_body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
 
         <TextView
             android:id="@+id/ep_picker_title"
@@ -121,5 +129,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:columnCount="5" />
-    </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
 </FrameLayout>

@@ -171,18 +171,27 @@
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- ================= 菜单（菜单键调出）：画面填充 + 弹幕开关 ================= -->
-    <LinearLayout
+    <!-- ================= 菜单（菜单键调出）：画面填充 + 翻转 + 弹幕开关 =================
+         ScrollView：手机翻转成横屏后屏幕高度只剩约 390dp，8 项菜单约 540dp 会被
+         裁掉底部的「退出播放」；PlayerActivity.fitMenuPanel 只在手机横屏时限高，
+         TV（720dp 画布）与手机竖屏内容都在高度内，行为与旧版一致。 -->
+    <ScrollView
         android:id="@+id/menu_panel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|end"
         android:layout_marginTop="72dp"
         android:layout_marginEnd="36dp"
-        android:orientation="vertical"
+        android:scrollbars="none"
         android:padding="10dp"
         android:background="@drawable/panel_bg"
         android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/menu_list"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
 
         <TextView
             android:id="@+id/menu_fill"
@@ -310,7 +319,8 @@
             android:focusable="true"
             android:focusableInTouchMode="true"
             android:clickable="true" />
-    </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
 
     <!-- 焦点锚点：播放页所有按键都走 Activity.onKeyDown 全局处理，这里需要一个
          1dp 的隐形可聚焦控件承接焦点，避免菜单关闭后焦点落空、或被会消费方向键的
