@@ -78,6 +78,13 @@ class PlayerActivity : AppCompatActivity() {
     private var epList: List<Int> = emptyList()
     /** 当前位置下标（0-based）：在 vidList/epList 间移动；显示集号取 epList[位置] */
     private var currentPos = 0
+    /**
+     * 播放器上当前挂着的 MediaItem 属于哪个位置（-1 = 还没起播过 / 已释放）。
+     * 切集时先改 currentPos 再换片，prepare 前播放器里仍是上一集的内容；
+     * 此期间读到的进度属于旧集，绝不能写到新集的历史里（会把旧集进度
+     * 写成新集的续播点，下次进新集直接被 seek 到旧位置）。
+     */
+    private var loadedPos = -1
     private var playJob: Job? = null
     private var playGen = 0
 
@@ -280,6 +287,9 @@ class PlayerActivity : AppCompatActivity() {
                 // 解码器初始化期的 STATE_ENDED 会在那之后才投递过来，抑制窗口太短会漏。
                 Player.STATE_READY -> {
                     releaseSwitchGuard()
+                    // 解码就绪：转圈可以收了（首帧通常紧随其后；这里兜住个别
+                    // 机型首帧回调缺失的情况，避免转圈盖在画面上）
+                    hideLoading()
                     // 参考 HGTV MainActivityPlayer：STATE_READY 时必须确认视频轨真的被选中。
                     // 有些资源只解出音频轨（如 bytevc2/AV1 那类容器里没可用视频 track），
                     // 此时 ExoPlayer 照样进 READY，用户看到的是「有声音的黑屏」——
@@ -289,6 +299,11 @@ class PlayerActivity : AppCompatActivity() {
                         logReadyVideoTrack()
                         applyPendingResume()
                         notifyQualityIfNeeded()
+                        // 预加载提前到「本集就绪」：当前集播的是本地明文文件，CDN
+                        // 带宽全程空闲；越早把后面几集拉进缓存，用户中途划走时越可能
+                        // 命中缓存——这是「无感切集」的前提。后台起播（用户已按主页）
+                        // 不预取，避免后台跑流量。
+                        if (isVisibleNow()) prefetchNext()
                     } else {
                         onNoVideoTrack()
                     }
@@ -331,8 +346,13 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
+        override fun onRenderedFirstFrame() {
+            // 真正出画面的那一刻才收起转圈（无感切集的核心：有画面就不该有 loading）
+            hideLoading()
+        }
+
         override fun onPlayerError(error: PlaybackException) {
-            progress.visibility = View.GONE
+            hideLoading()
             // ⚠️ 解码失败的终态是 STATE_IDLE，永远不会再进 STATE_READY。
             // 若不复位切换抑制标记，switchingEpisode 会永久为 true，
             // 用户按上下键切集将被永久拦截（只有退出播放页才能恢复）。
@@ -681,6 +701,9 @@ class PlayerActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(sb: SeekBar) {
                 tracking = false
                 val exo = player ?: return
+                // 切集准备期：进度条上还是上一集的时间轴，对它 seek 没意义，
+                // 而且 flush 解码器可能打断新集的 prepare。
+                if (switchingEpisode) return
                 val dur = exo.duration
                 if (dur > 0) {
                     val target = seekBarPreviewMs.takeIf { it > 0 }
@@ -750,7 +773,8 @@ class PlayerActivity : AppCompatActivity() {
         availableHeights = emptySet()
 
         updateEpisodeInfo()
-        progress.visibility = View.VISIBLE
+        // 无感切集：不立刻弹转圈，延迟 400ms 仍没出画面再显示（见 scheduleLoading）
+        scheduleLoading()
         errorPanel.visibility = View.GONE
 
         // 挂兜底：无论 STATE_READY / onPlayerError 谁先到（或都没到），
@@ -794,7 +818,7 @@ class PlayerActivity : AppCompatActivity() {
                 // Exception）。此前漏接导致整个协程崩掉、播放页异常退出。
                 if (gen != playGen) return@launch
                 AppLog.e("PlayerActivity", "起播失败 vid=$vid", e)
-                progress.visibility = View.GONE
+                hideLoading()
                 currentEpisodeFailed = true
                 // 起播失败也必须解除切集抑制，否则之后所有 STATE_ENDED 都被忽略，
                 // 用户按上下键切集将永远没有反应。
@@ -1038,6 +1062,8 @@ class PlayerActivity : AppCompatActivity() {
             releaseSwitchGuard()
             return
         }
+        // 播放器上挂的内容已是本集（此后 recordHistory 才会写本集进度）
+        loadedPos = currentPos
         p.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
         p.prepare()
         applySpeed()
@@ -1062,7 +1088,12 @@ class PlayerActivity : AppCompatActivity() {
             p.playWhenReady = false
             shouldBePlaying = false
         }
-        progress.visibility = View.GONE
+
+        // loading 兜底：正常由首帧 / STATE_READY 隐藏；这里再挂一个上限，
+        // 防止个别 ROM 不回调 onRenderedFirstFrame 导致转圈不停。
+        // 注意不在这里直接隐藏：解码器初始化完不等于出画面，早收会先看到黑屏。
+        handler.removeCallbacks(hideLoadingRunnable)
+        handler.postDelayed(hideLoadingRunnable, FIRST_FRAME_HIDE_MS)
         recordHistory(force = true)
         // 注意：switchingEpisode 由 playerListener 在收到 STATE_READY 时复位，
         // 覆盖到解码器初始化完成那一刻（比在这里复位更安全）。
@@ -1111,6 +1142,8 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun togglePlayPause() {
+        // 切集准备期：播放器里挂的还是上一集，此时"继续"会把旧集的声音放出来
+        if (switchingEpisode) return
         val p = player ?: return
         if (p.isPlaying) p.pause() else p.play()
         recordHistory(force = true)
@@ -1655,18 +1688,22 @@ class PlayerActivity : AppCompatActivity() {
             return
         }
         switchingEpisode = true
-        // 先落盘当前集进度，再切走
+        // 先落盘当前集进度，再切走（此刻 currentPos 仍指向旧集，读到的位置有效）
         recordHistory(force = true)
+        // 只暂停不 stop：SurfaceView 保留上一集最后一帧（不黑屏），音频立即停。
+        // 旧实现在这里 releasePlayer()（stop + clearMediaItems）会把解码器拆掉，
+        // 每切一集都先黑屏、再重新初始化解码器，是「切集有感」的最大来源。
+        // 新集起播由 startPlayback 直接换 MediaItem（缓存命中时几乎是秒换）。
+        player?.pause()
         currentPos = pos
         resumePosition = 0
         // 切集后新的一集是全新上下文：重置本集的失败自愈标记（每个 vid 各自计一次）
         autoHevcSkipVid = null
         autoSoftFailoverVid = null
         ioRetriedVid = null
-        // 停止上一集；只清理「新预取窗口之外」的明文临时文件。
+        // 清理「新预取窗口之外」的明文临时文件。
         // 关键：不能整目录删——新窗口（当前集起 PREFETCH_AHEAD 集）里若已有
         // 预加载文件，删掉会让缓存永远命中不了（预加载失效、切集又变卡）。
-        releasePlayer()
         val keep = HashSet<String>()
         val keepEnd = minOf(pos + PREFETCH_AHEAD, vidList.size - 1)
         for (k in pos..keepEnd) vidList.getOrNull(k)?.let { keep.add(it) }
@@ -1797,6 +1834,10 @@ class PlayerActivity : AppCompatActivity() {
      */
     private fun recordHistory(force: Boolean = false) {
         if (seriesId.isEmpty()) return
+        // 切集准备期：currentPos 已指向新集，但播放器里还挂着上一集的 MediaItem，
+        // 此刻读到的位置属于旧集，写进去会污染新集的续播点。等新集 startPlayback
+        // 之后再记（那时 loadedPos 才更新为 currentPos）。
+        if (loadedPos != currentPos) return
         val now = System.currentTimeMillis()
         if (!force && now - lastHistoryWrite < HISTORY_WRITE_INTERVAL_MS) return
         val p = player
@@ -2083,21 +2124,48 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    /* ==================== 起播 loading（无感切集） ==================== */
+
+    /** loading 是否仍在等待显示（hideLoading 后置 false，防止延迟任务补弹） */
+    private var loadingPending = false
+    private val showLoadingRunnable = Runnable {
+        if (loadingPending) progress.visibility = View.VISIBLE
+    }
+    private val hideLoadingRunnable = Runnable { hideLoading() }
+
+    /** 起播开始：延迟 [LOADING_SHOW_DELAY_MS] 再显示转圈，快的切集全程不闪。 */
+    private fun scheduleLoading() {
+        loadingPending = true
+        handler.removeCallbacks(showLoadingRunnable)
+        handler.postDelayed(showLoadingRunnable, LOADING_SHOW_DELAY_MS)
+    }
+
+    /** 出首帧 / 就绪 / 失败时收起转圈（幂等）。 */
+    private fun hideLoading() {
+        loadingPending = false
+        handler.removeCallbacks(showLoadingRunnable)
+        handler.removeCallbacks(hideLoadingRunnable)
+        progress.visibility = View.GONE
+    }
+
     /* ==================== 进度刷新（500ms） ==================== */
 
     private val progressRunnable = object : Runnable {
         override fun run() {
             val p = player
-            if (p != null && !tracking) {
+            // 切集准备期播放器里仍是上一集的内容：进度/弹幕/历史都不能按新集算，
+            // 等 STATE_READY 复位 switchingEpisode 后自然恢复。
+            if (p != null && !tracking && !switchingEpisode) {
                 val dur = p.duration
                 val pos = p.currentPosition
                 if (dur > 0) {
                     seekBar.max = 1000
                     seekBar.progress = (pos * 1000 / dur).toInt()
                     updateProgressText()
-                    // 播放到 80% 时预加载下一集。放在这里而非弹幕函数内，
-                    // 避免「关闭弹幕导致预加载一并失效」。
-                    if (pos >= dur * 4 / 5) prefetchNext()
+                    // 兜底预取：正常在 STATE_READY 就已经开始预取，这里只在
+                    // 之前那轮预取被切集取消/失败时补跑（窗口内有缺就补）。
+                    // 放在这里而非弹幕函数内，避免「关闭弹幕导致预加载一并失效」。
+                    if (pos >= dur / 5) prefetchNext()
                 }
                 updateDanmaku(p, pos, dur)
                 // 周期性落盘进度（节流 10s），保证异常退出也不丢进度
@@ -2188,9 +2256,12 @@ class PlayerActivity : AppCompatActivity() {
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_PLAY -> {
-                player?.play()
-                // 恢复播放：立即收起边栏（onIsPlayingChanged 也会兜一遍）
-                hideControlsNow()
+                // 切集准备期不允许把上一集续播起来
+                if (!switchingEpisode) {
+                    player?.play()
+                    // 恢复播放：立即收起边栏（onIsPlayingChanged 也会兜一遍）
+                    hideControlsNow()
+                }
                 return true
             }
             else -> {
@@ -2217,6 +2288,8 @@ class PlayerActivity : AppCompatActivity() {
      */
     private fun quickSeek(dir: Int, repeatCount: Int) {
         val p = player ?: return
+        // 切集准备期：播放器里还是上一集，快进快退不该作用在旧集上
+        if (switchingEpisode) return
         val dur = p.duration
         if (dur <= 0) return
         // 用户已手动操作进度：作废待执行的续播 seek，避免 STATE_READY 回调
@@ -2463,6 +2536,8 @@ class PlayerActivity : AppCompatActivity() {
         // 用户反馈：按主页返回后后台还在出声音。Activity 不可见时必须暂停。
         // shouldBePlaying 记录「用户意图」，回前台据此决定是否自动续播——
         // 避免把用户手动暂停的播放强行续起。
+        // 切集准备期播放器里还是上一集：本次 onStop 属于旧集，不落盘、不记恢复位。
+        if (switchingEpisode) return
         shouldBePlaying = player?.isPlaying == true
         resumePosition = try {
             val p = player
@@ -2477,6 +2552,8 @@ class PlayerActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         val p = player ?: return
+        // 切集准备期被切到后台：不做 seek/续播，等新集 STATE_READY 后自然起播
+        if (switchingEpisode) return
         // 从后台/按主页返回后回前台：回到原位并仅在「用户意图是播放」时续播
         if (resumePosition > 0) {
             try {
@@ -2568,6 +2645,18 @@ class PlayerActivity : AppCompatActivity() {
          * 到点仍未收到 STATE_READY/onPlayerError 就强制解除，保证上下键不锁死。
          */
         private const val SWITCH_GUARD_MS = 45_000L
+
+        /**
+         * 起播 loading 的延迟显示时长：本地缓存命中通常 200~400ms 就出首帧，
+         * 立刻弹转圈会让「无感切集」闪一下，反而割裂。
+         */
+        private const val LOADING_SHOW_DELAY_MS = 400L
+
+        /**
+         * 起播 loading 的兜底隐藏时长：个别 ROM 不回调 onRenderedFirstFrame，
+         * 到点强制收起，避免转圈永远挂在画面上。
+         */
+        private const val FIRST_FRAME_HIDE_MS = 8_000L
 
         /** tkhd 解析时读取的文件头长度（moov 通常在前 256KB 内）。 */
         private const val MOOV_PROBE_BYTES = 256 * 1024
