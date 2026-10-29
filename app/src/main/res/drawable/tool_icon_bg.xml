@@ -1,14 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 右上角图标工具按钮：未聚焦=极淡圆形底，聚焦=品牌红实心圆 -->
+<!-- 右上工具圆钮：聚焦=品牌红实心；默认=hairline 描边 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
         <shape android:shape="oval">
-            <solid android:color="@color/primary" />
+            <solid android:color="@color/accent"/>
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape android:shape="oval">
+            <solid android:color="@color/panel_focus"/>
+            <stroke android:width="@dimen/hairline" android:color="@color/hair_strong"/>
         </shape>
     </item>
     <item>
         <shape android:shape="oval">
-            <solid android:color="#1AFFFFFF" />
+            <solid android:color="@android:color/transparent"/>
+            <stroke android:width="@dimen/hairline" android:color="@color/hair"/>
         </shape>
     </item>
 </selector>

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 筛选胶囊文字色：选中/聚焦=骨白，其余次级灰 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_selected="true" android:color="@color/text_primary" />
-    <item android:state_focused="true" android:color="@color/text_primary" />
-    <item android:color="@color/text_secondary" />
+    <item android:state_selected="true" android:color="@color/bone" />
+    <item android:state_focused="true" android:color="@color/bone" />
+    <item android:color="@color/dim" />
 </selector>

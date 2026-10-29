@@ -1,16 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  HOUG CINEMA 设计 token（暖黑影院）
+  底色偏暖，骨白文字，品牌红作为唯一强调色。
+  旧语义名（bg / surface / primary ...）保留并映射到新色值，
+  以便全 App 资源自动换肤；新增语义名供新界面直接使用。
+-->
 <resources>
-    <!-- 深色主题配色（对齐HG/Flutter 版） -->
-    <color name="bg">#0D0D0D</color>
-    <color name="surface">#1A1A1A</color>
-    <color name="surface_light">#242424</color>
-    <color name="primary">#E53935</color>
-    <color name="primary_dark">#C62828</color>
-    <color name="text_primary">#FFFFFF</color>
-    <color name="text_secondary">#B0B0B0</color>
-    <color name="text_hint">#757575</color>
-    <color name="divider">#2A2A2A</color>
-    <color name="focus_border">#E53935</color>
+    <!-- 旧语义名 → 新色值（全 App 自动换肤） -->
+    <color name="bg">#070606</color>
+    <color name="surface">#17110E</color>
+    <color name="surface_light">#221A15</color>
+    <color name="primary">#D93A2B</color>
+    <color name="primary_dark">#A82A1F</color>
+    <color name="text_primary">#F0EAE0</color>
+    <color name="text_secondary">#9B948A</color>
+    <color name="text_hint">#5D574F</color>
+    <color name="divider">#21F0EAE0</color>
+    <color name="focus_border">#D93A2B</color>
     <color name="black">#000000</color>
     <color name="white">#FFFFFF</color>
+
+    <!-- 新语义名 -->
+    <color name="bone">#F0EAE0</color>
+    <color name="dim">#9B948A</color>
+    <color name="faint">#5D574F</color>
+    <color name="accent">#D93A2B</color>
+    <color name="accent_soft">#29D93A2B</color>
+    <color name="hair">#21F0EAE0</color>
+    <color name="hair_strong">#38F0EAE0</color>
+
+    <!-- 影院背景（径向暖黑渐变的起止色） -->
+    <color name="cinema_core">#120D0A</color>
+    <color name="cinema_edge">#070606</color>
+    <color name="panel">#14100D</color>
+    <color name="panel_focus">#2A211B</color>
+    <color name="scrim">#CC070606</color>
+    <color name="scrim_soft">#A6070606</color>
 </resources>

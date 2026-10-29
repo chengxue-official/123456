@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 底部 dock：顶部 hairline + 暖黑半透明底 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/scrim_soft"/>
+        </shape>
+    </item>
+    <item android:gravity="top">
+        <shape android:shape="rectangle">
+            <size android:height="@dimen/hairline"/>
+            <solid android:color="@color/hair"/>
+        </shape>
+    </item>
+</layer-list>

@@ -1,16 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 卡片：默认暖面 + hairline 细描边；聚焦时品牌红框（影院焦点表现） -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
-        <shape>
-            <solid android:color="@color/surface_light" />
-            <stroke android:width="2dp" android:color="@color/focus_border" />
-            <corners android:radius="12dp" />
+        <shape android:shape="rectangle">
+            <solid android:color="@color/panel_focus"/>
+            <stroke android:width="@dimen/focus_stroke" android:color="@color/accent"/>
+            <corners android:radius="@dimen/card_radius"/>
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/panel_focus"/>
+            <stroke android:width="@dimen/hairline" android:color="@color/hair_strong"/>
+            <corners android:radius="@dimen/card_radius"/>
         </shape>
     </item>
     <item>
-        <shape>
-            <solid android:color="@color/surface" />
-            <corners android:radius="12dp" />
+        <shape android:shape="rectangle">
+            <solid android:color="@color/surface"/>
+            <stroke android:width="@dimen/hairline" android:color="@color/hair"/>
+            <corners android:radius="@dimen/card_radius"/>
         </shape>
     </item>
 </selector>

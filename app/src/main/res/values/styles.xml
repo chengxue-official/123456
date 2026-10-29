@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 深色无标题栏主题：所有页面全屏沉浸（手机竖屏刷短剧不要状态栏/标题条） -->
+    <!-- HOUG CINEMA：暖黑影院主题，全屏沉浸 -->
     <style name="AppTheme" parent="Theme.AppCompat">
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryDark">@color/primary_dark</item>
         <item name="colorAccent">@color/primary</item>
-        <item name="android:windowBackground">@color/bg</item>
-        <item name="android:textColorPrimary">@color/text_primary</item>
-        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:windowBackground">@drawable/bg_cinema</item>
+        <item name="android:textColorPrimary">@color/bone</item>
+        <item name="android:textColorSecondary">@color/dim</item>
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:windowFullscreen">true</item>
@@ -20,6 +20,28 @@
         <item name="windowNoTitle">true</item>
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowContentOverlay">@null</item>
+    </style>
+
+    <!-- 衬线 display 标题（ mast 品牌 / 屏幕大标题） -->
+    <style name="HougDisplay">
+        <item name="android:fontFamily">serif</item>
+        <item name="android:textColor">@color/bone</item>
+        <item name="android:letterSpacing">0.08</item>
+    </style>
+
+    <style name="HougDisplay.Brand">
+        <item name="android:textSize">26sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.22</item>
+    </style>
+
+    <!-- 衬线小标（区块 eyebrow：如「今日热播」「继续观看」） -->
+    <style name="HougEyebrow">
+        <item name="android:fontFamily">serif</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/dim</item>
+        <item name="android:letterSpacing">0.28</item>
+        <item name="android:textAllCaps">false</item>
     </style>
 
     <!-- 分类页大类切换 Tab（胶囊样式，复用筛选胶囊视觉） -->
@@ -36,7 +58,7 @@
         <item name="android:gravity">center</item>
     </style>
 
-    <!-- 榜单页切换 Tab -->
+    <!-- 榜单页切换 Tab（衬线，下划线式） -->
     <style name="RankBoardTab">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>

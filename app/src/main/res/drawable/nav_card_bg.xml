@@ -1,23 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 图标卡片入口背景：未聚焦=微亮深灰，聚焦=亮面+品牌红描边 -->
+<!-- 首页导航卡：默认 hairline 描边；聚焦=品牌红框 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
         <shape android:shape="rectangle">
-            <solid android:color="@color/surface_light" />
-            <stroke android:width="2dp" android:color="@color/primary" />
-            <corners android:radius="16dp" />
+            <solid android:color="@color/panel_focus"/>
+            <stroke android:width="@dimen/focus_stroke" android:color="@color/accent"/>
+            <corners android:radius="16dp"/>
         </shape>
     </item>
     <item android:state_pressed="true">
         <shape android:shape="rectangle">
-            <solid android:color="@color/surface_light" />
-            <corners android:radius="16dp" />
+            <solid android:color="@color/panel_focus"/>
+            <stroke android:width="@dimen/hairline" android:color="@color/hair_strong"/>
+            <corners android:radius="16dp"/>
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="@color/surface" />
-            <corners android:radius="16dp" />
+            <solid android:color="@android:color/transparent"/>
+            <stroke android:width="@dimen/hairline" android:color="@color/hair"/>
+            <corners android:radius="16dp"/>
         </shape>
     </item>
 </selector>

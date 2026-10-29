@@ -15,4 +15,10 @@
     <!-- 字号增益系数（float，UiScale.warp 读取后乘进 scaledDensity） -->
     <item name="font_boost" format="float" type="dimen">1.0</item>
     <item name="font_boost_tv" format="float" type="dimen">1.05</item>
+
+    <!-- HOUG CINEMA：hairline 描边 / 弹窗圆角 / dock 高度 -->
+    <dimen name="hairline">1px</dimen>
+    <dimen name="panel_radius">20dp</dimen>
+    <dimen name="card_radius">12dp</dimen>
+    <dimen name="focus_stroke">2dp</dimen>
 </resources>

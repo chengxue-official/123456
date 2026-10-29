@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  海报卡片：默认无底色、仅 hairline 细描边（让封面自己撑起画面）；
+  聚焦时整格亮起品牌红框 —— 影院感的唯一强提示。
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent"/>
+            <stroke android:width="@dimen/focus_stroke" android:color="@color/accent"/>
+            <corners android:radius="10dp"/>
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/accent_soft"/>
+            <corners android:radius="10dp"/>
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent"/>
+            <stroke android:width="@dimen/hairline" android:color="@color/hair"/>
+            <corners android:radius="10dp"/>
+        </shape>
+    </item>
+</selector>

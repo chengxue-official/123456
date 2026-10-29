@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 品牌色竖条：标题左侧的一小段强调条 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="@color/primary" />
-    <corners android:radius="2dp" />
+<!-- 品牌红竖条（mast 左侧记忆点） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/accent"/>
+    <corners android:radius="2dp"/>
 </shape>

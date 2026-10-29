@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HOUG CINEMA 影院底：径向暖黑渐变（中心略偏上，模拟银幕反光），
+  同时作为 AppTheme 的 windowBackground，让所有页面获得统一底色。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:type="radial"
+        android:centerX="0.5"
+        android:centerY="0.34"
+        android:gradientRadius="1100dp"
+        android:startColor="@color/cinema_core"
+        android:endColor="@color/cinema_edge"
+        android:centerColor="@color/cinema_edge"/>
+</shape>

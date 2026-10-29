@@ -5,7 +5,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/bg">
+    android:background="@drawable/bg_cinema">
 
     <!-- 顶部栏（与 TV 版同构） -->
     <LinearLayout

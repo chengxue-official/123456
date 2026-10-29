@@ -5,7 +5,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/bg">
+    android:background="@drawable/bg_cinema">
 
     <!-- 顶部第一行：分类标题 + 返回。大类胶囊在 411dp 竖屏下与标题同行会被返回键挤掉
          半截（看着像被屏幕边缘裁掉），因此单独占一行、整行可横滑。 -->

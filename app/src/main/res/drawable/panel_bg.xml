@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 浮层/菜单面板：暖黑面板 + hairline 描边（与 card_bg 分离，避免焦点态抢戏） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/panel"/>
+    <stroke android:width="@dimen/hairline" android:color="@color/hair_strong"/>
+    <corners android:radius="@dimen/panel_radius"/>
+</shape>

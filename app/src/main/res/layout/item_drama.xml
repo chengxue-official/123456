@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
+  海报卡（HOUG CINEMA）：无卡片底色，封面自撑画面；聚焦时整格红框。
   卡片宽度由网格均分决定（match_parent + GridSpacingDecoration 间距），
   封面高度由 RatioCoverView 按 150:205 比例从宽度推出，任何分辨率下不变形不溢出。
 -->
@@ -7,8 +8,8 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="5dp"
-    android:background="@drawable/card_bg"
+    android:padding="4dp"
+    android:background="@drawable/poster_bg"
     android:focusable="true"
     android:clickable="true">
 
@@ -17,7 +18,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:scaleType="centerCrop"
-        android:background="@color/surface_light" />
+        android:background="@color/surface" />
 
     <TextView
         android:id="@+id/title"
@@ -26,7 +27,7 @@
         android:layout_marginTop="8dp"
         android:paddingStart="2dp"
         android:paddingEnd="2dp"
-        android:textColor="@color/text_primary"
+        android:textColor="@color/bone"
         android:textSize="14sp"
         android:maxLines="1"
         android:ellipsize="end" />
@@ -39,8 +40,9 @@
         android:layout_marginBottom="2dp"
         android:paddingStart="2dp"
         android:paddingEnd="2dp"
-        android:textColor="@color/text_secondary"
-        android:textSize="12sp"
+        android:textColor="@color/dim"
+        android:textSize="11sp"
+        android:letterSpacing="0.04"
         android:maxLines="1"
         android:ellipsize="end" />
 </LinearLayout>

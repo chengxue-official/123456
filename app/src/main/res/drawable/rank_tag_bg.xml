@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 榜单状态标签（如「新剧」）底色 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="#33E53935" />
-    <corners android:radius="3dp" />
+<!-- 榜单状态标签底：淡红 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/accent_soft"/>
+    <corners android:radius="3dp"/>
 </shape>
