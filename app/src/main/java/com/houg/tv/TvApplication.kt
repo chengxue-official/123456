@@ -9,6 +9,7 @@ import com.houg.tv.sign.DeviceRegister
 import com.houg.tv.util.AppLog
 import com.houg.tv.util.CrashLogger
 import com.houg.tv.util.DeviceInfo
+import java.io.File
 
 /** 全局单例容器：提供网络层、观看历史/收藏、搜索历史的全局访问。 */
 object App {
@@ -26,6 +27,8 @@ object App {
         // 注入注册身份的上下文（读落盘 device_id/install_id），必须在 NetClient 之前
         DeviceRegister.attach(app)
         netClient = NetClient(HttpClientProvider.get())
+        // 注入季缓存落盘目录：同系列剧集 24h 缓存，冷启动也能复用（剧集更新极慢）
+        netClient.setCacheDir(File(app.filesDir, "netcache"))
         watchHistory = WatchHistory(app)
         searchHistory = SearchHistory(app)
         // 开启日志文件持久化（全量、跨启动保留），必须在第一笔日志之前

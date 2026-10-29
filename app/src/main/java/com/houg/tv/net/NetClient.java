@@ -17,6 +17,10 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.text.SimpleDateFormat;
@@ -228,6 +232,15 @@ public final class NetClient {
     /** 合理的最大季/部数（超出视为脏数据）。 */
     private static final int SEARCH_SEASON_MAX = 200;
 
+    /** 同系列季表缓存有效期：剧集更新极慢（不可能一天多出一季），24h 足够。 */
+    private static final long SEASON_CACHE_TTL_MS = 24L * 60 * 60 * 1000;
+
+    /** 季缓存最多保留多少个系列（LRU，内存与落盘同源）。 */
+    private static final int SEASON_CACHE_MAX = 200;
+
+    /** 季缓存落盘文件名（位于 {@link #setCacheDir} 注入的目录）。 */
+    private static final String SEASON_CACHE_FILE = "season_cache.json";
+
     /**
      * 季数后缀识别：第N季 / 第N部（支持阿拉伯数字与中文数字），且必须位于片名末尾。
      * 末尾锚点是必要的——否则「离婚第二季特辑」这类特别篇会被误并入「离婚」系列，
@@ -304,6 +317,138 @@ public final class NetClient {
                     return size() > RANK_CACHE_MAX;
                 }
             });
+
+    /** 同系列季表缓存条目：完整季表（含当前季）+ 写入时刻。 */
+    private static final class CachedSeasons {
+        final long at;
+        final Map<Integer, Drama> seasons;
+
+        CachedSeasons(long at, Map<Integer, Drama> seasons) {
+            this.at = at;
+            this.seasons = seasons;
+        }
+    }
+
+    /**
+     * 同系列季表缓存（{@code baseKey#unit} → 完整季表，LRU + 24h + 跨启动落盘）。
+     *
+     * <p>为什么值得缓存：用户反馈详情页「同系列剧集」加载太长。剧集更新极慢
+     * （不可能一天多出一季），同一系列的季表 24h 内几乎不变；而详情页对同一部剧
+     * 会被反复进入（返回再进、跨季跳转 S1→S3），每次都重跑「建议接口 + 全库搜索 +
+     * 逐季探测」纯属浪费。命中后 &lt;1ms 返回，冷启动也能从落盘文件恢复。
+     */
+    private static final Map<String, CachedSeasons> SEASON_CACHE =
+            Collections.synchronizedMap(new LinkedHashMap<String, CachedSeasons>(32, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, CachedSeasons> eldest) {
+                    return size() > SEASON_CACHE_MAX;
+                }
+            });
+
+    /** 季缓存落盘文件；未注入（无 Context）时退化为纯内存缓存。 */
+    private volatile File seasonCacheFile;
+
+    /** 注入季缓存落盘目录并恢复历史季表（App 启动时调用一次）。 */
+    public void setCacheDir(File dir) {
+        if (dir == null) return;
+        try {
+            if (!dir.exists() && !dir.mkdirs()) return;
+            seasonCacheFile = new File(dir, SEASON_CACHE_FILE);
+            loadSeasonCache();
+        } catch (Exception e) {
+            AppLog.INSTANCE.d(TAG, "季缓存初始化失败 " + e.getMessage());
+        }
+    }
+
+    /** 从磁盘恢复季表缓存（过期条目直接丢弃）。IO 线程。 */
+    private void loadSeasonCache() {
+        File f = seasonCacheFile;
+        if (f == null || !f.exists()) return;
+        try (FileInputStream in = new FileInputStream(f)) {
+            ByteArrayOutputStream buf = new ByteArrayOutputStream();
+            byte[] b = new byte[4096];
+            int n;
+            while ((n = in.read(b)) > 0) buf.write(b, 0, n);
+            JSONObject root = new JSONObject(new JSONTokener(buf.toString("UTF-8")));
+            JSONArray list = root.optJSONArray("list");
+            if (list == null) return;
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject e = list.optJSONObject(i);
+                if (e == null) continue;
+                String key = e.optString("key", "");
+                long at = e.optLong("at", 0L);
+                if (key.isEmpty() || at <= 0
+                        || System.currentTimeMillis() - at > SEASON_CACHE_TTL_MS) continue;
+                JSONArray items = e.optJSONArray("items");
+                if (items == null) continue;
+                Map<Integer, Drama> seasons = new TreeMap<>();
+                for (int j = 0; j < items.length(); j++) {
+                    JSONObject o = items.optJSONObject(j);
+                    if (o == null) continue;
+                    String id = o.optString("id", "");
+                    int s = o.optInt("s", 0);
+                    if (id.isEmpty() || !isNumericId(id) || s <= 0 || s > SEARCH_SEASON_MAX) continue;
+                    seasons.put(s, Drama.minimal(id, o.optString("t", ""), o.optString("c", "")));
+                }
+                if (!seasons.isEmpty()) SEASON_CACHE.put(key, new CachedSeasons(at, seasons));
+            }
+            AppLog.INSTANCE.d(TAG, "季缓存已恢复 " + SEASON_CACHE.size() + " 个系列");
+        } catch (Exception e) {
+            AppLog.INSTANCE.d(TAG, "季缓存读取失败 " + e.getMessage());
+        }
+    }
+
+    /**
+     * 季表整写入缓存并落盘。文件很小（≤200 个系列 × 每系几条 id/标题/封面），
+     * 每次新增条目整写一次；tmp + rename 防写一半损坏。IO 线程。
+     */
+    private void rememberSeasons(String cacheKey, Map<Integer, Drama> seasons) {
+        SEASON_CACHE.put(cacheKey,
+                new CachedSeasons(System.currentTimeMillis(), new TreeMap<>(seasons)));
+        saveSeasonCache();
+    }
+
+    private void saveSeasonCache() {
+        File f = seasonCacheFile;
+        if (f == null) return;
+        try {
+            // synchronizedMap 的迭代必须持锁（JDK 约定）
+            List<Map.Entry<String, CachedSeasons>> snap;
+            synchronized (SEASON_CACHE) {
+                snap = new ArrayList<>(SEASON_CACHE.entrySet());
+            }
+            JSONArray list = new JSONArray();
+            for (Map.Entry<String, CachedSeasons> e : snap) {
+                CachedSeasons c = e.getValue();
+                JSONArray items = new JSONArray();
+                for (Map.Entry<Integer, Drama> s : c.seasons.entrySet()) {
+                    JSONObject o = new JSONObject();
+                    o.put("s", s.getKey().intValue());
+                    o.put("id", s.getValue().id == null ? "" : s.getValue().id);
+                    o.put("t", s.getValue().title == null ? "" : s.getValue().title);
+                    o.put("c", s.getValue().cover == null ? "" : s.getValue().cover);
+                    items.put(o);
+                }
+                JSONObject eo = new JSONObject();
+                eo.put("key", e.getKey());
+                eo.put("at", c.at);
+                eo.put("items", items);
+                list.put(eo);
+            }
+            JSONObject root = new JSONObject();
+            root.put("v", 1);
+            root.put("list", list);
+            byte[] data = root.toString().getBytes("UTF-8");
+            File tmp = new File(f.getParentFile(), f.getName() + ".tmp");
+            try (FileOutputStream out = new FileOutputStream(tmp)) {
+                out.write(data);
+            }
+            if (f.exists()) f.delete();
+            if (!tmp.renameTo(f)) tmp.delete();
+        } catch (Exception e) {
+            AppLog.INSTANCE.d(TAG, "季缓存写入失败 " + e.getMessage());
+        }
+    }
 
     /* ==================== 数据模型 ==================== */
 
@@ -2526,19 +2671,19 @@ public final class NetClient {
 
     /**
      * 详情页「同系列其他季」联动：给定本剧标题，召回该系列全部季，按季号升序返回
-     * （不含本剧）。两步走，<b>准确优先</b>：
+     * （不含本剧）。<b>缓存优先</b>，未命中三步走（准确优先）：
      *
      * <ol>
      *   <li>建议接口按裸基础名快速捞一批（&lt;300ms），能中的季直接省掉逐季探测；</li>
-     *   <li>官方全库搜索（{@link #fetchOfficialSearchDramas}）逐季并行补全：对每个
-     *   候选季号拼「基础名＋第N季/部」查询（只翻第 1 页），向下补齐已见最大季以内的
-     *   缺号，向上按批探到整批 0 命中为止。</li>
+     *   <li>官方全库搜索按<b>裸基础名</b>捞一次：全库相关度检索一条请求就能把同一部剧
+     *   的各季全部列出（原先只靠逐季拼「第N季」全名检索，7~18 个请求）；</li>
+     *   <li>仍缺的季才逐季并行补全：向下补齐已见最大季以内的缺号，向上按批探到整批
+     *   0 命中为止。</li>
      * </ol>
      *
-     * <p>为什么必须走官方全库搜索：建议接口的索引缺季词条（实测「…凶万倍」只有
-     * S1/S2，S3/S4 连词条都没有），漏掉的季只能靠全库检索按全名命中补上。
-     * 每季一个请求、6 路并行，墙钟约等于单次请求（1~3s/批）；详情页后台协程里跑、
-     * 不挡首屏。IO 线程调用。
+     * <p>为什么还要逐季补：官方搜索有召回上限/排序，个别季可能被挤掉；逐季全名检索
+     * 是兜底。整表写入 {@link #SEASON_CACHE}（含当前季，从任意一季进入都能看到其他季），
+     * 24h TTL——剧集更新极慢，24h 内季表几乎不变。IO 线程调用。
      */
     public List<Drama> findSiblingSeasons(String title, String selfId) {
         long t0 = System.currentTimeMillis();
@@ -2551,16 +2696,46 @@ public final class NetClient {
         String unit = ps[2];
         String baseKey = normTitle(base);
         if (baseKey.isEmpty()) return out;
+        String cacheKey = baseKey + "#" + unit;
 
-        // 季号 → Drama；收集时排除本剧自身、季/部不混
+        // 第 0 步：缓存命中直接返回（缓存存的是完整季表，含当前季，这里过滤掉）
+        CachedSeasons cached = SEASON_CACHE.get(cacheKey);
+        if (cached != null && System.currentTimeMillis() - cached.at <= SEASON_CACHE_TTL_MS) {
+            for (Map.Entry<Integer, Drama> e : cached.seasons.entrySet()) {
+                if (e.getKey() == cur) continue;                      // 本剧所在季
+                Drama d = e.getValue();
+                if (selfId != null && selfId.equals(d.id)) continue;   // 本剧自身
+                out.add(d);
+            }
+            // 整表里除当前季外没有别的季 = 该系列确无兄弟季，直接返回空，不再重复探测
+            AppLog.INSTANCE.d(TAG, "findSiblingSeasons 缓存命中 " + cacheKey + " → "
+                    + out.size() + " 个兄弟季（" + (System.currentTimeMillis() - t0) + "ms）");
+            return out;
+        }
+
+        // 季号 → Drama（含当前季：缓存要存完整季表，输出时才过滤）
         Map<Integer, Drama> picked = new TreeMap<>();
+        // 至少一路网络请求正常返回才落缓存，防止网络故障把「空表」固化 24h
+        AtomicBoolean netOk = new AtomicBoolean(false);
 
         // 第 1 步：建议接口白捡一次（快）
         try {
-            harvestSeasons(picked, fetchSuggestDramas(base, SEARCH_SUGGEST_COUNT),
-                    baseKey, unit, selfId, cur);
+            List<Drama> sug = fetchSuggestDramas(base, SEARCH_SUGGEST_COUNT);
+            netOk.set(true);
+            harvestSeasons(picked, sug, baseKey, unit);
         } catch (Exception e) {
             AppLog.INSTANCE.d(TAG, "findSiblingSeasons 建议接口失败 " + e.getMessage());
+        }
+
+        // 第 2 步：官方全库搜索按裸基础名捞一次（一条请求列出全系列各季）
+        try {
+            List<Drama> raw = new ArrayList<>();
+            fetchOfficialSearchDramas(base,
+                    System.currentTimeMillis() + SEARCH_OFFICIAL_PAGE_MIN_MS * 2, raw, null);
+            netOk.set(true);
+            harvestSeasons(picked, raw, baseKey, unit);
+        } catch (Exception e) {
+            AppLog.INSTANCE.d(TAG, "findSiblingSeasons 裸名全库搜索失败 " + e.getMessage());
         }
 
         int maxKnown = cur;
@@ -2574,7 +2749,9 @@ public final class NetClient {
                 if (s != cur && !picked.containsKey(s)) down.add(s);
             }
             if (!down.isEmpty()) {
-                for (Drama d : probeSeasons(pool, base, unit, baseKey, selfId, down)) putBest(picked, d);
+                for (Drama d : probeSeasons(pool, base, unit, baseKey, selfId, down, netOk)) {
+                    putBest(picked, d);
+                }
             }
 
             // 第 2 步 b：向上按批探，整批 0 命中即停（防个别季索引缺词导致误判到头）
@@ -2587,7 +2764,7 @@ public final class NetClient {
                     if (s != cur) batch.add(s);
                 }
                 if (batch.isEmpty()) break;
-                List<Drama> hits = probeSeasons(pool, base, unit, baseKey, selfId, batch);
+                List<Drama> hits = probeSeasons(pool, base, unit, baseKey, selfId, batch, netOk);
                 if (hits.isEmpty()) break;
                 for (Drama d : hits) putBest(picked, d);
                 from += DETAIL_SEASON_BATCH;
@@ -2596,7 +2773,15 @@ public final class NetClient {
             pool.shutdownNow();
         }
 
-        for (Map.Entry<Integer, Drama> e : picked.entrySet()) out.add(e.getValue());
+        // 整表入缓存（含当前季）：至少一路网络成功才缓存
+        if (netOk.get() && !picked.isEmpty()) rememberSeasons(cacheKey, picked);
+
+        for (Map.Entry<Integer, Drama> e : picked.entrySet()) {
+            if (e.getKey() == cur) continue;                      // 本剧所在季
+            Drama d = e.getValue();
+            if (selfId != null && selfId.equals(d.id)) continue;   // 本剧自身
+            out.add(d);
+        }
         AppLog.INSTANCE.d(TAG, "findSiblingSeasons title=" + t + " → " + out.size()
                 + " 个兄弟季（" + (System.currentTimeMillis() - t0) + "ms）");
         return out;
@@ -2608,6 +2793,16 @@ public final class NetClient {
      */
     private List<Drama> probeSeasons(ExecutorService pool, String base, String unit, String baseKey,
                                      String selfId, Collection<Integer> seasons) {
+        return probeSeasons(pool, base, unit, baseKey, selfId, seasons, null);
+    }
+
+    /**
+     * 同上；{@code anyDone} 非空时，任一任务<b>正常完成</b>（未命中也是有效结果）
+     * 即置 true，供调用方区分「确实没有这一季」与「网络整体失败」。
+     */
+    private List<Drama> probeSeasons(ExecutorService pool, String base, String unit, String baseKey,
+                                     String selfId, Collection<Integer> seasons,
+                                     AtomicBoolean anyDone) {
         List<Future<List<Drama>>> fs = new ArrayList<>();
         for (Integer si : seasons) {
             final int s = si;
@@ -2622,6 +2817,7 @@ public final class NetClient {
                 AppLog.INSTANCE.d(TAG, "probeSeasons 季探测失败 " + e.getMessage());
                 continue;
             }
+            if (anyDone != null) anyDone.set(true);
             if (hit == null || hit.isEmpty()) continue;
             out.addAll(hit);
         }
@@ -2680,12 +2876,15 @@ public final class NetClient {
         }
     }
 
-    /** 把一批候选季并入 picked：同基础名（+ 同单位），排除本剧自身，同季号留字段更全者。 */
+    /**
+     * 把一批候选季并入 picked：同基础名（+ 同单位），同季号留字段更全者。
+     * <b>不排除当前季</b>——缓存存的是完整季表，从任意一季进入都能互看，
+     * 本剧自身的过滤放在 findSiblingSeasons 输出时做。
+     */
     private void harvestSeasons(Map<Integer, Drama> picked, List<Drama> batch, String baseKey,
-                                String unit, String selfId, int cur) {
+                                String unit) {
         for (Drama d : batch) {
             if (d == null || d.id == null || d.id.isEmpty()) continue;
-            if (selfId != null && selfId.equals(d.id)) continue;   // 本剧自身
             String[] q = parseSeason(d.title);
             if (!normTitle(q[0]).equals(baseKey)) continue;
             int s = Integer.parseInt(q[1]);
@@ -2696,7 +2895,6 @@ public final class NetClient {
             } else if (!unit.isEmpty() && !unit.equals(q[2])) {
                 continue;                                // 季/部不混
             }
-            if (s == cur) continue;                      // 本剧自身（无标记时 cur=0，不会命中）
             putBest(picked, d);
         }
     }
