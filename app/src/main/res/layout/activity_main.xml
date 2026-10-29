@@ -1,349 +1,118 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent">
-
-<LinearLayout
+<!--
+  HOUG CINEMA 首页：顶部 mast（品牌行）+ 中央内容流（RecyclerView 统一承载
+  Hero / 继续观看 / 今日热播 / 新上架）+ 底部 dock（主导航）。
+  间距 token 由 MainActivity 按 TV / 手机形态注入（applyPageInsets）。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/page_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@drawable/bg_cinema">
+    android:background="@color/bg"
+    android:orientation="vertical">
 
-    <!--
-      布局语言借鉴 TVBox：品牌色竖条 + 粗体标题、分类胶囊、图标卡片入口、大圆角。
-      焦点图显式声明为三行网格，避免遥控器在工具图标区与卡片区之间乱跳：
-        工具行(右上)  btn_search   -> btn_log        -> btn_update
-        分类行(左)    tab_real     -> tab_comic      -> tab_ai
-        卡片行(左)    btn_history  -> btn_favorite   -> btn_rank
-    -->
-
-    <!-- ============ 第一行：品牌标识 + 右上角工具图标 ============ -->
+    <!-- mast：品牌 + 搜索 + 工具 -->
     <LinearLayout
-        android:id="@+id/header"
+        android:id="@+id/mast"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="56dp"
         android:orientation="horizontal"
-        android:background="@drawable/header_bg"
-        android:gravity="center_vertical"
-        android:paddingBottom="10dp">
+        android:gravity="center_vertical">
 
-        <LinearLayout
-            android:layout_width="0dp"
+        <View
+            android:id="@+id/brand_accent"
+            android:layout_width="3dp"
+            android:layout_height="20dp"
+            android:background="@color/accent" />
+
+        <TextView
+            android:id="@+id/app_title"
+            style="@style/HougDisplay"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
+            android:layout_marginStart="8dp"
+            android:text="@string/app_name"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.16" />
 
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
+        <TextView
+            android:id="@+id/brand_sub"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:text="HOUG CINEMA"
+            android:textSize="8sp"
+            android:textColor="@color/faint"
+            android:letterSpacing="0.34" />
 
-                <!-- 品牌色竖条：对应参考图标题左侧的红色强调条 -->
-                <View
-                    android:layout_width="4dp"
-                    android:layout_height="22dp"
-                    android:background="@drawable/brand_accent" />
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
 
-                <TextView
-                    android:id="@+id/app_title"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp"
-                    android:text="@string/app_name"
-                    android:textColor="@color/text_primary"
-                    android:textSize="22sp"
-                    android:textStyle="bold"
-                    android:includeFontPadding="false" />
-            </LinearLayout>
+        <TextView
+            android:id="@+id/community_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/community_hint"
+            android:textSize="12sp"
+            android:textColor="@color/dim"
+            android:maxLines="1"
+            android:ellipsize="end" />
 
-            <TextView
-                android:id="@+id/community_hint"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="14dp"
-                android:layout_marginTop="4dp"
-                android:text="@string/community_hint"
-                android:textColor="@color/text_hint"
-                android:textSize="11sp"
-                android:maxLines="1"
-                android:includeFontPadding="false" />
-        </LinearLayout>
-
-        <FrameLayout
+        <TextView
             android:id="@+id/btn_search"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginStart="10dp"
-            android:background="@drawable/tool_icon_bg"
-            android:nextFocusRight="@id/btn_log"
-            android:nextFocusDown="@id/tab_real"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginStart="14dp"
+            android:gravity="center"
+            android:background="@drawable/button_bg"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/nav_search"
+            android:textSize="12sp"
+            android:textColor="@color/bone"
             android:focusable="true"
-            android:clickable="true">
+            android:focusableInTouchMode="true" />
 
-            <ImageView
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:layout_gravity="center"
-                android:src="@drawable/ic_nav_search"
-                android:contentDescription="@string/nav_search" />
-        </FrameLayout>
-
-        <FrameLayout
-            android:id="@+id/btn_log"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginStart="10dp"
-            android:background="@drawable/tool_icon_bg"
-            android:nextFocusLeft="@id/btn_search"
-            android:nextFocusRight="@id/btn_update"
-            android:nextFocusDown="@id/tab_comic"
-            android:focusable="true"
-            android:clickable="true">
-
-            <ImageView
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:layout_gravity="center"
-                android:src="@drawable/ic_nav_log"
-                android:contentDescription="@string/nav_log" />
-        </FrameLayout>
-
-        <FrameLayout
+        <ImageButton
             android:id="@+id/btn_update"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
             android:layout_marginStart="10dp"
             android:background="@drawable/tool_icon_bg"
-            android:nextFocusLeft="@id/btn_log"
-            android:nextFocusDown="@id/tab_ai"
+            android:src="@drawable/ic_nav_update"
+            android:scaleType="center"
+            android:contentDescription="@string/nav_update"
             android:focusable="true"
-            android:clickable="true">
+            android:focusableInTouchMode="true" />
 
-            <ImageView
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:layout_gravity="center"
-                android:src="@drawable/ic_nav_update"
-                android:contentDescription="@string/nav_update" />
-        </FrameLayout>
+        <!-- 临时：界面形态切换（TV/手机），SettingsActivity 落地后移除 -->
+        <ImageButton
+            android:id="@+id/btn_uimode"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="10dp"
+            android:background="@drawable/tool_icon_bg"
+            android:src="@drawable/ic_nav_recommend"
+            android:scaleType="center"
+            android:contentDescription="@string/nav_log"
+            android:focusable="true"
+            android:focusableInTouchMode="true" />
     </LinearLayout>
 
-    <!-- ============ 第二行：分类胶囊 ============ -->
-    <LinearLayout
-        android:id="@+id/tab_bar"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
-        android:orientation="horizontal">
-
-        <TextView
-            android:id="@+id/tab_real"
-            android:layout_width="wrap_content"
-            android:layout_height="34dp"
-            android:gravity="center"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:text="真人剧"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:textColor="@color/pill_text"
-            android:background="@drawable/pill_bg"
-            android:nextFocusUp="@id/btn_search"
-            android:nextFocusRight="@id/tab_comic"
-            android:nextFocusDown="@id/btn_history"
-            android:focusable="true"
-            android:clickable="true" />
-
-        <TextView
-            android:id="@+id/tab_comic"
-            android:layout_width="wrap_content"
-            android:layout_height="34dp"
-            android:layout_marginStart="8dp"
-            android:gravity="center"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:text="漫剧"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:textColor="@color/pill_text"
-            android:background="@drawable/pill_bg"
-            android:nextFocusUp="@id/btn_log"
-            android:nextFocusLeft="@id/tab_real"
-            android:nextFocusRight="@id/tab_ai"
-            android:nextFocusDown="@id/btn_favorite"
-            android:focusable="true"
-            android:clickable="true" />
-
-        <TextView
-            android:id="@+id/tab_ai"
-            android:layout_width="wrap_content"
-            android:layout_height="34dp"
-            android:layout_marginStart="8dp"
-            android:gravity="center"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:text="AI剧"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:textColor="@color/pill_text"
-            android:background="@drawable/pill_bg"
-            android:nextFocusUp="@id/btn_update"
-            android:nextFocusLeft="@id/tab_comic"
-            android:nextFocusDown="@id/btn_rank"
-            android:focusable="true"
-            android:clickable="true" />
-    </LinearLayout>
-
-    <!-- ============ 第三行：图标卡片入口 ============
-         竖屏手机 411dp 宽放不下 4 张卡，包横向滚动；TV 上内容能放下不滚动 -->
-    <HorizontalScrollView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:scrollbars="none">
-
-    <LinearLayout
-        android:id="@+id/nav_row"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
-
-        <LinearLayout
-            android:id="@+id/btn_history"
-            android:layout_width="wrap_content"
-            android:layout_height="58dp"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:background="@drawable/nav_card_bg"
-            android:nextFocusUp="@id/tab_real"
-            android:focusable="true"
-            android:clickable="true">
-
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/ic_nav_history"
-                android:contentDescription="@string/nav_history" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
-                android:includeFontPadding="false"
-                android:text="@string/nav_history"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/btn_favorite"
-            android:layout_width="wrap_content"
-            android:layout_height="58dp"
-            android:layout_marginStart="12dp"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:background="@drawable/nav_card_bg"
-            android:nextFocusUp="@id/tab_comic"
-            android:focusable="true"
-            android:clickable="true">
-
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/ic_nav_favorite"
-                android:contentDescription="@string/nav_favorite" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
-                android:includeFontPadding="false"
-                android:text="@string/nav_favorite"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/btn_rank"
-            android:layout_width="wrap_content"
-            android:layout_height="58dp"
-            android:layout_marginStart="12dp"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:background="@drawable/nav_card_bg"
-            android:nextFocusUp="@id/tab_ai"
-            android:focusable="true"
-            android:clickable="true">
-
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/ic_nav_rank"
-                android:contentDescription="@string/nav_rank" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
-                android:includeFontPadding="false"
-                android:text="@string/nav_rank"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/btn_category"
-            android:layout_width="wrap_content"
-            android:layout_height="58dp"
-            android:layout_marginStart="12dp"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:background="@drawable/nav_card_bg"
-            android:nextFocusUp="@id/tab_ai"
-            android:nextFocusLeft="@id/btn_rank"
-            android:focusable="true"
-            android:clickable="true">
-
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/ic_nav_category"
-                android:contentDescription="@string/nav_category" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
-                android:includeFontPadding="false"
-                android:text="@string/nav_category"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp" />
-        </LinearLayout>
-    </LinearLayout>
-    </HorizontalScrollView>
-
-    <!-- ============ 内容区 ============ -->
+    <!-- 中央内容流 -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:layout_marginTop="12dp">
+        android:layout_weight="1">
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recycler"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:paddingTop="4dp"
-            android:paddingBottom="16dp"
+            android:overScrollMode="never"
             android:clipToPadding="false" />
 
         <ProgressBar
@@ -351,6 +120,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
+            android:indeterminateTint="@color/accent"
             android:visibility="gone" />
 
         <TextView
@@ -358,29 +128,137 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:textColor="@color/text_secondary"
-            android:textSize="15sp"
+            android:text="@string/empty"
+            android:textSize="14sp"
+            android:textColor="@color/faint"
             android:visibility="gone" />
     </FrameLayout>
-</LinearLayout>
 
-    <!-- ============ 顶部边界中间：手机/电视 UI 兜底切换 ============
-         半透明小胶囊，不进焦点链不抢焦点；电视被误判成手机时（VIDAA 等
-         非 Android TV 系统自动判不出）从这里手动切形态，重启后生效 -->
-    <TextView
-        android:id="@+id/btn_uimode"
-        android:layout_width="wrap_content"
-        android:layout_height="30dp"
-        android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="6dp"
-        android:gravity="center"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp"
-        android:text="界面：电视"
-        android:textSize="11sp"
-        android:textColor="@color/text_secondary"
-        android:background="@drawable/tool_icon_bg"
-        android:alpha="0.5"
-        android:focusable="true"
-        android:clickable="true" />
-</FrameLayout>
+    <!-- 底部 dock：主导航 -->
+    <HorizontalScrollView
+        android:id="@+id/dock_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:background="@drawable/dock_bg"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/dock_row"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <LinearLayout
+                android:id="@+id/dock_home"
+                style="@style/DockItem"
+                android:tag="home">
+
+                <TextView
+                    android:id="@+id/dock_home_label"
+                    style="@style/DockLabel"
+                    android:text="@string/dock_home" />
+
+                <View
+                    android:id="@+id/dock_home_bar"
+                    style="@style/DockBar" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/dock_category"
+                style="@style/DockItem"
+                android:tag="category"
+                android:layout_marginStart="24dp">
+
+                <TextView
+                    android:id="@+id/dock_category_label"
+                    style="@style/DockLabel"
+                    android:text="@string/nav_category" />
+
+                <View
+                    android:id="@+id/dock_category_bar"
+                    style="@style/DockBar" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/dock_rank"
+                style="@style/DockItem"
+                android:tag="rank"
+                android:layout_marginStart="24dp">
+
+                <TextView
+                    android:id="@+id/dock_rank_label"
+                    style="@style/DockLabel"
+                    android:text="@string/nav_rank" />
+
+                <View
+                    android:id="@+id/dock_rank_bar"
+                    style="@style/DockBar" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/dock_search"
+                style="@style/DockItem"
+                android:tag="search"
+                android:layout_marginStart="24dp">
+
+                <TextView
+                    android:id="@+id/dock_search_label"
+                    style="@style/DockLabel"
+                    android:text="@string/nav_search" />
+
+                <View
+                    android:id="@+id/dock_search_bar"
+                    style="@style/DockBar" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/dock_fav"
+                style="@style/DockItem"
+                android:tag="fav"
+                android:layout_marginStart="24dp">
+
+                <TextView
+                    android:id="@+id/dock_fav_label"
+                    style="@style/DockLabel"
+                    android:text="@string/dock_fav" />
+
+                <View
+                    android:id="@+id/dock_fav_bar"
+                    style="@style/DockBar" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/dock_history"
+                style="@style/DockItem"
+                android:tag="history"
+                android:layout_marginStart="24dp">
+
+                <TextView
+                    android:id="@+id/dock_history_label"
+                    style="@style/DockLabel"
+                    android:text="@string/nav_history" />
+
+                <View
+                    android:id="@+id/dock_history_bar"
+                    style="@style/DockBar" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/dock_settings"
+                style="@style/DockItem"
+                android:tag="settings"
+                android:layout_marginStart="24dp">
+
+                <TextView
+                    android:id="@+id/dock_settings_label"
+                    style="@style/DockLabel"
+                    android:text="@string/dock_settings" />
+
+                <View
+                    android:id="@+id/dock_settings_bar"
+                    style="@style/DockBar" />
+            </LinearLayout>
+        </LinearLayout>
+    </HorizontalScrollView>
+</LinearLayout>

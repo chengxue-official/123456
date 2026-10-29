@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hero 压暗层（原型 .hero::after）：
+  ① 左暗右透——左侧托住标题文字，右侧让海报保持可见；
+  ② 上透下暗——底部与页面暖黑底色自然衔接。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="0"
+                android:startColor="#F7070606"
+                android:centerColor="#B3070606"
+                android:endColor="#2E070606" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:startColor="#00070606"
+                android:centerColor="#00070606"
+                android:endColor="#F2070606" />
+        </shape>
+    </item>
+</layer-list>

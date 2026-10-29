@@ -2,29 +2,32 @@ package com.houg.tv
 
 import android.content.Context
 import android.content.Intent
-import android.os.Build
+import android.graphics.Rect
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
-import android.view.ViewGroup
-import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.houg.tv.net.NetClient
-import com.houg.tv.update.UpdateChecker
 import com.houg.tv.update.UpdateDialog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 首页：真人剧 / 漫剧 / AI剧 三个分类 + 搜索 / 追剧入口 */
+/**
+ * 首页（HOUG CINEMA 影院流）：
+ * mast 品牌行 + RecyclerView 内容流（Hero / 继续观看 / 今日热播 / 新上架）+ 底部 dock。
+ * 内容流与新上架共用一个 GridLayoutManager——整行区块 span=列数，
+ * 网格卡片 span=1（见 HomeAdapter.gridStartPosition）。
+ */
 class MainActivity : AppCompatActivity() {
 
     /** 全局 density/字号缩放（1280×720dp 设计画布），见 UiScale.warp */
@@ -32,77 +35,22 @@ class MainActivity : AppCompatActivity() {
         super.attachBaseContext(UiScale.warp(newBase))
     }
 
-    private data class Genre(val key: String, val scene: String, val label: String)
-
-    /**
-     * 页面安全边距：手机 24dp / TV 64dp（overscan 5% 安全区）。
-     * 用代码设置而非资源限定符——AppCompat 重建 Resources 时会把 warp 强设的
-     * uiMode 打回系统值，values-television 在 Activity 层不生效，见 UiScale.isTv。
-     */
-    private fun applyPageInsets() {
-        val h = UiScale.pageH(this)
-        val header = findViewById<View>(R.id.header)
-        header.setPadding(h, UiScale.pageTop(this), h, header.paddingBottom)
-        listOf(R.id.tab_bar, R.id.nav_row).forEach { id ->
-            val v = findViewById<View>(id)
-            val lp = v.layoutParams as ViewGroup.MarginLayoutParams
-            lp.marginStart = h
-            v.layoutParams = lp
-        }
-        recycler.setPadding(h, recycler.paddingTop, h, recycler.paddingBottom)
-        if (!UiScale.isTv(this)) fitNavCards(h)
-    }
-
-    /**
-     * 手机竖屏可用宽度只有约 363dp（411dp - 两侧 24dp 边距），4 张 wrap_content
-     * 导航卡（padding 20dp + 图标 + 文字 + 12dp 间距）合计约 452dp，
-     * 末尾「分类」被右边缘裁掉（QA Bug-01）。改成等分满宽 + 紧凑内边距，
-     * 一屏放下不再滚动；TV 上内容能放下，保持原样。
-     */
-    private fun fitNavCards(h: Int) {
-        fun dp(v: Int) = (v * resources.displayMetrics.density + 0.5f).toInt()
-        val row = findViewById<LinearLayout>(R.id.nav_row)
-        row.layoutParams = row.layoutParams.apply {
-            width = resources.displayMetrics.widthPixels - 2 * h
-        }
-        listOf(R.id.btn_history, R.id.btn_favorite, R.id.btn_rank, R.id.btn_category)
-            .forEachIndexed { i, id ->
-                val card = findViewById<LinearLayout>(id)
-                card.setPadding(dp(12), 0, dp(12), 0)
-                val lp = card.layoutParams as LinearLayout.LayoutParams
-                lp.width = 0
-                lp.weight = 1f
-                lp.marginStart = if (i == 0) 0 else dp(8)
-                card.layoutParams = lp
-                val label = card.getChildAt(1)
-                (label.layoutParams as LinearLayout.LayoutParams).marginStart = dp(8)
-                label.layoutParams = label.layoutParams
-            }
-    }
-
-    private val genres = listOf(
-        Genre("short_play", "default", "真人剧"),
-        Genre("comic_series", "comic_series", "漫剧"),
-        Genre("ai_series", "ai_series", "AI剧")
-    )
-
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private lateinit var adapter: DramaAdapter
+    private lateinit var adapter: HomeAdapter
     private lateinit var recycler: RecyclerView
     private lateinit var progress: View
     private lateinit var statusText: TextView
 
-    private var currentGenre = 0
     private var nextOffset = 0
     private var sessionId = ""
     private var hasMore = false
     private var loading = false
-    /** 请求代次：快速切分类时丢弃过期响应，避免数据错位 */
-    private var generation = 0
+    /** Hero 出现后把首焦点交给「立即播放」，只做一次 */
+    private var heroFocused = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        configureImmersive()
+        UiScale.applyImmersive(this)
         setContentView(R.layout.activity_main)
 
         progress = findViewById(R.id.progress)
@@ -111,8 +59,12 @@ class MainActivity : AppCompatActivity() {
 
         applyPageInsets()
 
-        adapter = DramaAdapter { drama -> openDetail(drama) }
-        installAutoGrid(recycler, UiScale.coverWidthDp(this), 2, 10)
+        adapter = HomeAdapter(
+            onHeroPlay = { openDetail(it) },
+            onToggleFavorite = { toggleFavorite(it) },
+            onDramaClick = { openDetail(it) }
+        )
+        setupGrid()
         recycler.adapter = adapter
         recycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
@@ -124,96 +76,110 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        setupTabs()
-        setupNavButtons()
+        setupMast()
+        setupDock()
 
-        selectGenre(0)
-        silentCheckUpdate()
+        adapter.setContinue(App.watchHistory.list().take(3))
+        loadHot()
+        loadPage(true)
     }
 
     /**
-     * 启动时静默检查更新：只在「确实有新版本」时才弹窗，检查失败/已最新都静默，
-     * 避免每次开机打扰用户。用户也可随时点「检查更新」手动触发并看到结果。
+     * 页面安全边距：手机 24dp / TV 64dp（overscan 5% 安全区）。
+     * 用代码设置而非资源限定符——AppCompat 重建 Resources 时会把 warp 强设的
+     * uiMode 打回系统值，values-television 在 Activity 层不生效，见 UiScale.isTv。
      */
-    private fun silentCheckUpdate() {
-        scope.launch {
-            val current = try {
-                packageManager.getPackageInfo(packageName, 0).versionCode
-            } catch (e: Exception) {
-                -1
-            }
-            val result = withContext(Dispatchers.IO) { UpdateChecker.check(this@MainActivity, current) }
-            if (result.hasUpdate) UpdateDialog.start(this@MainActivity, scope)
+    private fun applyPageInsets() {
+        val h = UiScale.pageH(this)
+        findViewById<View>(R.id.mast).setPadding(h, UiScale.pageTop(this), h, 0)
+        findViewById<View>(R.id.dock_row).setPadding(h, 0, h, 0)
+        recycler.setPadding(h, 0, h, 0)
+        if (!UiScale.isTv(this)) {
+            // 原型 body.m：手机 mast 只留品牌 + 搜索，避免交流群文案把按钮挤出屏
+            findViewById<View>(R.id.brand_sub).visibility = View.GONE
+            findViewById<View>(R.id.community_hint).visibility = View.GONE
         }
     }
 
-    private fun setupTabs() {
-        val tabs = listOf(
-            findViewById<TextView>(R.id.tab_real),
-            findViewById<TextView>(R.id.tab_comic),
-            findViewById<TextView>(R.id.tab_ai)
-        )
-        tabs.forEachIndexed { index, tab ->
-            tab.setOnClickListener { selectGenre(index) }
-            tab.setOnFocusChangeListener { v, hasFocus ->
-                v.animate()
-                    .scaleX(if (hasFocus) 1.08f else 1f)
-                    .scaleY(if (hasFocus) 1.08f else 1f)
-                    .setDuration(140)
-                    .start()
-                v.translationZ = if (hasFocus) 8f else 0f
-            }
+    /**
+     * 网格装配：列数按可用宽与目标卡宽自动算（gridPlan），尺寸变化时重算并替换
+     * layoutManager。区块整行 + 网格卡片混排，间距用自写 ItemDecoration——
+     * Ui.GridSpacingDecoration 按 pos % spanCount 定列，遇到整行会错位。
+     */
+    private fun setupGrid() {
+        recycler.layoutManager = GridLayoutManager(this, 6).apply {
+            spanSizeLookup = spanLookup()
         }
-        // 首焦点落在首个分类胶囊（与参考图一致），而非右上角工具图标。
-        // 用 post 等首帧布局完成后再请求，否则会被父容器的默认焦点搜索覆盖。
-        tabs.first().post { tabs.first().requestFocus() }
+        recycler.addItemDecoration(gridDecoration())
+        // 布局过程里不能同步换 layoutManager，必须 post；手机冷启动会先横后竖测两遍
+        recycler.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            recycler.post { recomputeSpan() }
+        }
+        recycler.post { recomputeSpan() }
     }
 
-    private fun setupNavButtons() {
+    private fun spanLookup() = object : GridLayoutManager.SpanSizeLookup() {
+        override fun getSpanSize(position: Int): Int {
+            val span = (recycler.layoutManager as? GridLayoutManager)?.spanCount ?: 6
+            return if (adapter.isGridRow(position)) 1 else span
+        }
+    }
+
+    private fun gridDecoration(): RecyclerView.ItemDecoration {
+        val gapPx = UiScale.gapPx(this)
+        return object : RecyclerView.ItemDecoration() {
+            override fun getItemOffsets(
+                outRect: Rect, view: View, parent: RecyclerView, state: RecyclerView.State
+            ) {
+                val pos = parent.getChildAdapterPosition(view)
+                if (pos == RecyclerView.NO_POSITION) return
+                val lm = parent.layoutManager as? GridLayoutManager ?: return
+                val start = adapter.gridStartPosition()
+                if (pos < start) return
+                val idx = pos - start
+                outRect.left = if (idx % lm.spanCount == 0) 0 else gapPx
+                outRect.top = if (idx >= lm.spanCount) gapPx else 0
+            }
+        }
+    }
+
+    private fun recomputeSpan() {
+        val avail = recycler.width - recycler.paddingLeft - recycler.paddingRight
+        if (avail <= 0) return
+        val gapPx = UiScale.gapPx(this)
+        val targetPx = (UiScale.coverWidthDp(this) * resources.displayMetrics.density).toInt()
+        val plan = gridPlan(avail, gapPx, targetPx, 2, 12)
+        val lm = recycler.layoutManager as? GridLayoutManager
+        if (lm == null || lm.spanCount != plan.columns) {
+            recycler.layoutManager = GridLayoutManager(this, plan.columns).apply {
+                spanSizeLookup = spanLookup()
+            }
+        }
+    }
+
+    /* ==================== mast ==================== */
+
+    private fun setupMast() {
         findViewById<View>(R.id.btn_search).setOnClickListener {
             startActivity(Intent(this, SearchActivity::class.java))
-        }
-        findViewById<View>(R.id.btn_history).setOnClickListener {
-            startActivity(Intent(this, HistoryActivity::class.java)
-                .putExtra(HistoryActivity.EXTRA_TAB, HistoryActivity.TAB_HISTORY))
-        }
-        findViewById<View>(R.id.btn_favorite).setOnClickListener {
-            startActivity(Intent(this, HistoryActivity::class.java)
-                .putExtra(HistoryActivity.EXTRA_TAB, HistoryActivity.TAB_FAVORITE))
-        }
-        findViewById<View>(R.id.btn_rank).setOnClickListener {
-            startActivity(Intent(this, RankActivity::class.java))
-        }
-        findViewById<View>(R.id.btn_category).setOnClickListener {
-            startActivity(Intent(this, CategoryActivity::class.java))
-        }
-        findViewById<View>(R.id.btn_log).setOnClickListener {
-            startActivity(Intent(this, LogActivity::class.java))
         }
         findViewById<View>(R.id.btn_update).setOnClickListener {
             UpdateDialog.start(this, scope)
         }
         setupUiModeButton()
-
         // 焦点微放大：遥控器进出焦点时有反馈，避免「只有描边变化」的死板感
-        listOf(R.id.btn_search, R.id.btn_history, R.id.btn_favorite,
-            R.id.btn_rank, R.id.btn_category, R.id.btn_log, R.id.btn_update)
+        listOf(R.id.btn_search, R.id.btn_update, R.id.btn_uimode)
             .forEach { attachFocusScale(findViewById(it)) }
     }
 
     /**
-     * 顶部边界中间的 UI 形态兜底按钮：电视被误判成手机时（VIDAA 等非 Android TV
-     * 系统自动判不出），从这里手动切「手机/电视」形态。选择持久化后重启生效
-     * （isTv 影响 attachBaseContext 的 density warp 和窗口方向，必须重建进程）。
+     * UI 形态兜底按钮：电视被误判成手机时（VIDAA 等非 Android TV 系统判不出），
+     * 手动切「手机/电视」形态。选择持久化后 recreate 生效（影响 attachBaseContext
+     * 的 density warp 与窗口方向）。SettingsActivity 落地后迁移过去。
      */
     private fun setupUiModeButton() {
-        val btn = findViewById<TextView>(R.id.btn_uimode)
+        val btn = findViewById<View>(R.id.btn_uimode)
         val mode = UiScale.uiMode(this)
-        btn.text = when (mode) {
-            UiScale.MODE_TV -> "界面：电视"
-            UiScale.MODE_PHONE -> "界面：手机"
-            else -> "界面：自动"
-        }
         btn.setOnClickListener {
             val options = arrayOf("自动检测", "电视界面", "手机界面")
             val values = arrayOf(UiScale.MODE_AUTO, UiScale.MODE_TV, UiScale.MODE_PHONE)
@@ -224,8 +190,6 @@ class MainActivity : AppCompatActivity() {
                     dialog.dismiss()
                     if (values[which] != mode) {
                         UiScale.setUiMode(this, values[which])
-                        // 重建当前页：isTv 同时影响 attachBaseContext 的 density warp、
-                        // 窗口方向与布局选择，recreate 会重走这两步，无需杀进程。
                         recreate()
                     }
                 }
@@ -246,25 +210,61 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun selectGenre(index: Int) {
-        currentGenre = index
-        generation++
-        val tabs = listOf(
-            findViewById<TextView>(R.id.tab_real),
-            findViewById<TextView>(R.id.tab_comic),
-            findViewById<TextView>(R.id.tab_ai)
+    /* ==================== dock ==================== */
+
+    private fun setupDock() {
+        val actions = mapOf<String, () -> Unit>(
+            "home" to { recycler.smoothScrollToPosition(0) },
+            "category" to { startActivity(Intent(this, CategoryActivity::class.java)) },
+            "rank" to { startActivity(Intent(this, RankActivity::class.java)) },
+            "search" to { startActivity(Intent(this, SearchActivity::class.java)) },
+            "fav" to {
+                startActivity(
+                    Intent(this, HistoryActivity::class.java)
+                        .putExtra(HistoryActivity.EXTRA_TAB, HistoryActivity.TAB_FAVORITE)
+                )
+            },
+            "history" to {
+                startActivity(
+                    Intent(this, HistoryActivity::class.java)
+                        .putExtra(HistoryActivity.EXTRA_TAB, HistoryActivity.TAB_HISTORY)
+                )
+            },
+            // 临时入口：SettingsActivity 未落地前先进日志页，落地后替换
+            "settings" to { startActivity(Intent(this, LogActivity::class.java)) }
         )
-        tabs.forEachIndexed { i, tab -> tab.isSelected = i == index }
-        // 允许新分类立即发起请求，旧请求由 generation 校验丢弃
-        loading = false
-        loadPage(true)
+        data class DockEntry(val key: String, val itemId: Int, val labelId: Int, val barId: Int)
+        listOf(
+            DockEntry("home", R.id.dock_home, R.id.dock_home_label, R.id.dock_home_bar),
+            DockEntry("category", R.id.dock_category, R.id.dock_category_label, R.id.dock_category_bar),
+            DockEntry("rank", R.id.dock_rank, R.id.dock_rank_label, R.id.dock_rank_bar),
+            DockEntry("search", R.id.dock_search, R.id.dock_search_label, R.id.dock_search_bar),
+            DockEntry("fav", R.id.dock_fav, R.id.dock_fav_label, R.id.dock_fav_bar),
+            DockEntry("history", R.id.dock_history, R.id.dock_history_label, R.id.dock_history_bar),
+            DockEntry("settings", R.id.dock_settings, R.id.dock_settings_label, R.id.dock_settings_bar)
+        ).forEach { entry ->
+            val item = findViewById<View>(entry.itemId)
+            val label = item.findViewById<TextView>(entry.labelId)
+            val bar = item.findViewById<View>(entry.barId)
+            item.setOnClickListener { actions[entry.key]?.invoke() }
+            item.setOnFocusChangeListener { _, hasFocus ->
+                label.setTextColor(
+                    ContextCompat.getColor(
+                        this, if (hasFocus) R.color.bone else R.color.faint
+                    )
+                )
+                // 首页是当前页，指示条常亮
+                bar.visibility =
+                    if (hasFocus || entry.key == "home") View.VISIBLE else View.INVISIBLE
+            }
+        }
     }
+
+    /* ==================== 数据 ==================== */
 
     private fun loadPage(reset: Boolean) {
         if (loading) return
         loading = true
-        val gen = generation
-        val genre = genres[currentGenre]
         val offset = if (reset) 0 else nextOffset
         val session = if (reset) "" else sessionId
 
@@ -274,62 +274,89 @@ class MainActivity : AppCompatActivity() {
         scope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    App.netClient.catalog(genre.key, genre.scene, offset, session)
+                    // 首页「新上架」固定用真人剧最新流（原型同款数据源）
+                    App.netClient.catalog("short_play", "default", offset, session)
                 }
-                if (gen != generation) return@launch
                 if (reset) {
-                    adapter.submit(result.dramas)
+                    adapter.submitCatalog(result.dramas)
+                    adapter.setHero(result.dramas.firstOrNull())
+                    recycler.scrollToPosition(0)
+                    focusHeroPlay()
                 } else {
-                    adapter.append(result.dramas)
+                    adapter.appendCatalog(result.dramas)
                 }
                 nextOffset = result.nextOffset
                 sessionId = result.sessionId
                 hasMore = result.hasMore
-                if (adapter.itemCount == 0) {
+                if (adapter.currentCatalog().isEmpty()) {
                     statusText.text = getString(R.string.empty)
                     statusText.visibility = View.VISIBLE
                 }
             } catch (e: Exception) {
-                if (gen != generation) return@launch
-                if (adapter.itemCount == 0) {
+                if (adapter.currentCatalog().isEmpty()) {
                     statusText.text = getString(R.string.load_failed)
                     statusText.visibility = View.VISIBLE
                 }
             } finally {
-                if (gen == generation) {
-                    progress.visibility = View.GONE
-                    loading = false
-                }
+                progress.visibility = View.GONE
+                loading = false
             }
         }
     }
 
+    /** 今日热播：用热播榜第一页前 5 名；失败静默，不挡首页主体 */
+    private fun loadHot() {
+        scope.launch {
+            try {
+                val page = withContext(Dispatchers.IO) {
+                    App.netClient.ranking(NetClient.RANK_BOARDS[0], 1)
+                }
+                adapter.setHot(page.items.take(5))
+            } catch (e: Exception) {
+                // 忽略：热播区块缺位可接受
+            }
+        }
+    }
+
+    private fun toggleFavorite(drama: NetClient.Drama) {
+        val on = App.watchHistory.toggleFavorite(drama.id, drama.title, drama.cover)
+        Toast.makeText(
+            this,
+            getString(if (on) R.string.favorite_added else R.string.favorite_removed),
+            Toast.LENGTH_SHORT
+        ).show()
+        adapter.refreshHeroFavorite()
+    }
+
     private fun openDetail(drama: NetClient.Drama) {
-        val intent = Intent(this, DetailActivity::class.java)
-        intent.putExtra(DetailActivity.EXTRA_SERIES_ID, drama.id)
-        intent.putExtra(DetailActivity.EXTRA_TITLE, drama.title)
-        intent.putExtra(DetailActivity.EXTRA_COVER, drama.cover)
-        startActivity(intent)
+        startActivity(
+            Intent(this, DetailActivity::class.java)
+                .putExtra(DetailActivity.EXTRA_SERIES_ID, drama.id)
+                .putExtra(DetailActivity.EXTRA_TITLE, drama.title)
+                .putExtra(DetailActivity.EXTRA_COVER, drama.cover)
+        )
+    }
+
+    /** Hero 到位后把首焦点交给「立即播放」（TV 遥控直达主行动） */
+    private fun focusHeroPlay() {
+        if (heroFocused) return
+        heroFocused = true
+        recycler.post {
+            val vh = recycler.findViewHolderForAdapterPosition(0) as? HomeAdapter.HeroVH
+            vh?.itemView?.findViewById<View>(R.id.hero_play)?.requestFocus()
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        configureImmersive()
-    }
-
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) configureImmersive()
+        UiScale.applyImmersive(this)
+        // 详情页可能改了进度/收藏，回来刷新继续观看（内部按 key 去重，无变化不重绘）
+        adapter.setContinue(App.watchHistory.list().take(3))
     }
 
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
-    }
-
-    /** 全屏沉浸（兼容 API 14）；方向按设备：TV 横屏 / 手机竖屏 */
-    private fun configureImmersive() {
-        UiScale.applyImmersive(this)
     }
 
     /** 首页返回键：弹确认退出，避免误触直接退出软件 */

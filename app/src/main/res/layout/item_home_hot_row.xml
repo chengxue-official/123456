@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 今日热播行：序号（前三名品牌红）+ 标题 + 热度 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="44dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/hot_row_bg"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:focusable="true"
+    android:focusableInTouchMode="true">
+
+    <TextView
+        android:id="@+id/hot_index"
+        android:layout_width="26dp"
+        android:layout_height="wrap_content"
+        android:fontFamily="serif"
+        android:textSize="15sp"
+        android:textColor="@color/faint" />
+
+    <TextView
+        android:id="@+id/hot_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:textSize="14sp"
+        android:textColor="@color/bone"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <TextView
+        android:id="@+id/hot_heat"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:textSize="13sp"
+        android:textColor="@color/dim" />
+</LinearLayout>

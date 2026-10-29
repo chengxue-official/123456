@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  区块标题行（原型 .rl）：衬线标题 + hairline 长线 + 弱化小注。
+  full-span 行，与 Hero/网格之间的纵向间距靠自身 margin。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="20dp"
+    android:layout_marginBottom="14dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical">
+
+    <TextView
+        android:id="@+id/section_title"
+        style="@style/HougDisplay"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="19sp"
+        android:letterSpacing="0.1"
+        android:maxLines="1" />
+
+    <View
+        android:layout_width="0dp"
+        android:layout_height="1dp"
+        android:layout_weight="1"
+        android:layout_marginStart="14dp"
+        android:background="@color/hair" />
+
+    <TextView
+        android:id="@+id/section_hint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="14dp"
+        android:textColor="@color/faint"
+        android:textSize="10sp"
+        android:letterSpacing="0.16"
+        android:maxLines="1" />
+</LinearLayout>

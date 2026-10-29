@@ -21,4 +21,8 @@
     <dimen name="panel_radius">20dp</dimen>
     <dimen name="card_radius">12dp</dimen>
     <dimen name="focus_stroke">2dp</dimen>
+
+    <!-- 首页 Hero 高度（原型 396px @1920 画布 × 2/3 = 264dp；手机取原型 body.m 280px） -->
+    <dimen name="home_hero_h">280dp</dimen>
+    <dimen name="home_hero_h_tv">264dp</dimen>
 </resources>
