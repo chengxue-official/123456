@@ -219,6 +219,12 @@ class PlayerActivity : AppCompatActivity() {
 
     private var speedIndex = 2
     private var danmakuEnabled = true
+
+    /** 快进基础步长（设置页可选 10/15/30/60s，默认 15s；长按重复时按此递增） */
+    private var seekStepMs = QUICK_SEEK_MS
+
+    /** 播完自动连播（设置页可关；关闭后播完停在最后一帧由用户手动切集） */
+    private var autoNext = true
     /**
      * 解码方式：true=软解（强制走 Audio/Video 软解码器），false=硬解（默认，交给系统 MediaCodec）。
      * 老盒子/投影仪上硬解 HEVC 常出现花屏、绿边、解码器初始化失败，用户可在播放菜单里切软解救急。
@@ -542,6 +548,8 @@ class PlayerActivity : AppCompatActivity() {
         decoderSoft = prefs.getBoolean(PREF_DECODER_SOFT, false)
         qualityIndex = prefs.getInt(PREF_QUALITY, QUALITY_AUTO)
             .coerceIn(0, QUALITY_MODES.size - 1)
+        seekStepMs = prefs.getLong(PREF_SEEK_STEP, QUICK_SEEK_MS)
+        autoNext = prefs.getBoolean(PREF_AUTO_NEXT, true)
 
         player = buildPlayer()
         player!!.setVideoSurfaceView(surfaceView)
@@ -1698,7 +1706,13 @@ class PlayerActivity : AppCompatActivity() {
         // 清空该集进度并把 lastEp 推进到本集。
         markEpisodeCompleted()
         if (currentPos + 1 < vidList.size) {
-            switchEpisode(currentPos + 1)
+            if (autoNext) {
+                switchEpisode(currentPos + 1)
+            } else {
+                // 设置页关掉了自动连播：停在本集最后一帧，由用户自己选集
+                toast(getString(R.string.ep_finished_auto_off, currentEpisode().toString()))
+                showControls()
+            }
         } else {
             // 末集播完：不再自动退出（那是"闪退回选集"的观感），停在原地给提示
             toast(getString(R.string.ep_played_out))
@@ -2095,8 +2109,8 @@ class PlayerActivity : AppCompatActivity() {
     /**
      * 快进/快退。
      * @param dir -1 快退，+1 快进
-     * @param repeatCount 系统长按重复计数；0 表示首次按下，步长 15s；
-     *                    每次重复步长递增 15s，让长按越久跳得越多。
+     * @param repeatCount 系统长按重复计数；0 表示首次按下，步长取设置页的 seek_step（默认 15s）；
+     *                    每次重复步长递增一个基础步长，让长按越久跳得越多。
      */
     private fun quickSeek(dir: Int, repeatCount: Int) {
         val p = player ?: return
@@ -2105,7 +2119,7 @@ class PlayerActivity : AppCompatActivity() {
         // 用户已手动操作进度：作废待执行的续播 seek，避免 STATE_READY 回调
         // 把用户刚拖到的位置又覆盖回续播点（READY 晚于按键到达的竞态）。
         pendingResumeMs = 0L
-        val step = QUICK_SEEK_MS * (1 + repeatCount.coerceAtMost(MAX_SEEK_REPEAT).toLong())
+        val step = seekStepMs * (1 + repeatCount.coerceAtMost(MAX_SEEK_REPEAT).toLong())
         val target = (p.currentPosition + dir * step).coerceIn(0L, dur)
         p.seekTo(target)
         skipSeekGroup(playGen)

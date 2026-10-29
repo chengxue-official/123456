@@ -102,6 +102,7 @@
     <string name="last_episode">已经是最后一集了</string>
     <string name="first_episode">已经是第一集了</string>
     <string name="ep_played_out">已播放完最后一集</string>
+    <string name="ep_finished_auto_off">已播完第 %1$s 集，自动连播已关闭</string>
     <string name="seek_forward">快进 %1$s</string>
     <string name="seek_backward">快退 %1$s</string>
     <string name="menu_open">菜单</string>
