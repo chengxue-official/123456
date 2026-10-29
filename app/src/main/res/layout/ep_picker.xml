@@ -5,7 +5,7 @@
     android:id="@+id/ep_picker_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#99000000"
+    android:background="@color/scrim_soft"
     android:clickable="true"
     android:focusable="true"
     android:visibility="gone">
@@ -17,7 +17,7 @@
         android:layout_gravity="end|center_vertical"
         android:layout_marginEnd="36dp"
         android:orientation="vertical"
-        android:background="@drawable/card_bg"
+        android:background="@drawable/panel_bg"
         android:padding="24dp">
 
         <TextView
@@ -26,7 +26,9 @@
             android:layout_height="wrap_content"
             android:textColor="@color/text_primary"
             android:textSize="20sp"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:fontFamily="serif"
+            android:letterSpacing="0.06" />
 
         <!-- 第一行：关闭 / 跳转集数 -->
         <LinearLayout

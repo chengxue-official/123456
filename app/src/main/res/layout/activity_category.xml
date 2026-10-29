@@ -5,14 +5,17 @@
     android:orientation="vertical"
     android:background="@drawable/bg_cinema">
 
-    <!-- 顶部栏：分类标题 + 大类切换 + 返回 -->
+    <!-- 顶部栏（TV 版只在 TV inflate，边距直接用 TV token：overscan 5% 安全区） -->
     <LinearLayout
+        android:id="@+id/category_top"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="106dp"
-        android:paddingEnd="106dp">
+        android:paddingStart="@dimen/page_h_tv"
+        android:paddingTop="@dimen/page_top_tv"
+        android:paddingEnd="@dimen/page_h_tv"
+        android:paddingBottom="8dp">
 
         <View
             android:layout_width="4dp"
@@ -21,6 +24,7 @@
 
         <TextView
             android:id="@+id/category_title"
+            style="@style/HougDisplay"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="10dp"
@@ -84,8 +88,8 @@
         android:id="@+id/filter_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="106dp"
-        android:layout_marginEnd="106dp"
+        android:layout_marginStart="@dimen/page_h_tv"
+        android:layout_marginEnd="@dimen/page_h_tv"
         android:orientation="vertical"
         android:visibility="gone" />
 
@@ -100,8 +104,8 @@
             android:id="@+id/category_list"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:paddingStart="106dp"
-            android:paddingEnd="106dp"
+            android:paddingStart="@dimen/page_h_tv"
+            android:paddingEnd="@dimen/page_h_tv"
             android:paddingTop="4dp"
             android:paddingBottom="16dp"
             android:clipToPadding="false" />

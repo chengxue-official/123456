@@ -10,12 +10,15 @@
     <!-- 顶部第一行：分类标题 + 返回。大类胶囊在 411dp 竖屏下与标题同行会被返回键挤掉
          半截（看着像被屏幕边缘裁掉），因此单独占一行、整行可横滑。 -->
     <LinearLayout
+        android:id="@+id/category_top"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="24dp"
-        android:paddingEnd="24dp">
+        android:paddingStart="@dimen/page_h"
+        android:paddingTop="@dimen/page_top"
+        android:paddingEnd="@dimen/page_h"
+        android:paddingBottom="8dp">
 
         <View
             android:layout_width="4dp"
@@ -28,6 +31,8 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="10dp"
             android:includeFontPadding="false"
+            android:fontFamily="serif"
+            android:letterSpacing="0.06"
             android:text="@string/category_title"
             android:textColor="@color/text_primary"
             android:textSize="22sp"
@@ -57,8 +62,8 @@
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingStart="24dp"
-        android:paddingEnd="24dp"
+        android:paddingStart="@dimen/page_h"
+        android:paddingEnd="@dimen/page_h"
         android:clipToPadding="false"
         android:scrollbars="none">
 
@@ -96,8 +101,8 @@
         android:id="@+id/filter_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="24dp"
-        android:layout_marginEnd="24dp"
+        android:layout_marginStart="@dimen/page_h"
+        android:layout_marginEnd="@dimen/page_h"
         android:orientation="vertical"
         android:visibility="gone" />
 
@@ -112,8 +117,8 @@
             android:id="@+id/category_list"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:paddingStart="24dp"
-            android:paddingEnd="24dp"
+            android:paddingStart="@dimen/page_h"
+            android:paddingEnd="@dimen/page_h"
             android:paddingTop="4dp"
             android:paddingBottom="16dp"
             android:clipToPadding="false" />

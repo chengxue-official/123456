@@ -7,14 +7,17 @@
     android:orientation="vertical"
     android:background="@drawable/bg_cinema">
 
-    <!-- 顶部栏（与 TV 版同构） -->
+    <!-- 顶部栏（与 TV 版同构，边距用手机 page token） -->
     <LinearLayout
+        android:id="@+id/detail_top"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp">
+        android:paddingStart="@dimen/page_h"
+        android:paddingEnd="@dimen/page_h"
+        android:paddingTop="@dimen/page_top"
+        android:paddingBottom="8dp">
 
         <TextView
             android:id="@+id/btn_back"
@@ -39,6 +42,8 @@
             android:textColor="@color/text_primary"
             android:textSize="18sp"
             android:textStyle="bold"
+            android:fontFamily="serif"
+            android:letterSpacing="0.06"
             android:maxLines="1"
             android:ellipsize="end" />
 
@@ -142,13 +147,13 @@
         android:visibility="gone">
 
         <TextView
+            style="@style/HougDisplay"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="20dp"
             android:text="@string/season_section_title"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp"
-            android:textStyle="bold" />
+            android:textSize="15sp"
+            android:letterSpacing="0.1" />
 
         <HorizontalScrollView
             android:layout_width="match_parent"
@@ -177,13 +182,13 @@
         android:visibility="gone">
 
         <TextView
+            style="@style/HougDisplay"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="20dp"
             android:text="@string/related_section_title"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp"
-            android:textStyle="bold" />
+            android:textSize="15sp"
+            android:letterSpacing="0.1" />
 
         <HorizontalScrollView
             android:layout_width="match_parent"

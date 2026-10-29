@@ -5,14 +5,14 @@
     android:orientation="vertical"
     android:background="@drawable/bg_cinema">
 
-    <!-- 顶部栏 -->
+    <!-- 顶部栏（左右安全边距由 HistoryActivity 按形态注入） -->
     <LinearLayout
+        android:id="@+id/history_top"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp">
+        android:paddingBottom="8dp">
 
         <TextView
             android:id="@+id/btn_back"
@@ -89,8 +89,6 @@
             android:id="@+id/recycler"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
             android:paddingTop="8dp"
             android:paddingBottom="8dp"
             android:clipToPadding="false" />

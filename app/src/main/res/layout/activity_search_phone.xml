@@ -9,12 +9,15 @@
 
     <!-- 顶部：返回 + 输入框 + 搜索（跨屏输入是 TV 扫码专用，手机隐藏但保留 id） -->
     <LinearLayout
+        android:id="@+id/search_top"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp">
+        android:paddingStart="@dimen/page_h"
+        android:paddingEnd="@dimen/page_h"
+        android:paddingTop="@dimen/page_top"
+        android:paddingBottom="8dp">
 
         <TextView
             android:id="@+id/btn_back"
@@ -76,7 +79,10 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:paddingStart="@dimen/page_h"
+        android:paddingEnd="@dimen/page_h"
+        android:paddingBottom="10dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -91,17 +97,15 @@
                 android:layout_height="match_parent"
                 android:layout_weight="1"
                 android:orientation="vertical"
-                android:paddingTop="8dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="6dp">
+                android:paddingTop="8dp">
 
                 <TextView
+                    style="@style/HougDisplay"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/hot_search"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
+                    android:textSize="15sp"
+                    android:letterSpacing="0.1" />
 
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/hot_list"
@@ -126,9 +130,7 @@
                 android:layout_height="match_parent"
                 android:layout_weight="1"
                 android:orientation="vertical"
-                android:paddingTop="8dp"
-                android:paddingStart="6dp"
-                android:paddingEnd="16dp">
+                android:paddingTop="8dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -137,12 +139,12 @@
                     android:gravity="center_vertical">
 
                     <TextView
+                        style="@style/HougDisplay"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/search_history"
-                        android:textColor="@color/text_primary"
-                        android:textSize="16sp"
-                        android:textStyle="bold" />
+                        android:textSize="15sp"
+                        android:letterSpacing="0.1" />
 
                     <View
                         android:layout_width="0dp"
@@ -199,8 +201,8 @@
             android:id="@+id/recycler"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
+            android:paddingStart="@dimen/page_h"
+            android:paddingEnd="@dimen/page_h"
             android:paddingTop="8dp"
             android:paddingBottom="8dp"
             android:clipToPadding="false" />

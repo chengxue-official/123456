@@ -5,14 +5,17 @@
     android:orientation="vertical"
     android:background="@drawable/bg_cinema">
 
-    <!-- 顶部：返回 + 输入框 + 搜索 + 跨屏输入 -->
+    <!-- 顶部：返回 + 输入框 + 搜索 + 跨屏输入（TV 版只在 TV inflate，直接用 TV token） -->
     <LinearLayout
+        android:id="@+id/search_top"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp">
+        android:paddingStart="@dimen/page_h_tv"
+        android:paddingEnd="@dimen/page_h_tv"
+        android:paddingTop="@dimen/page_top_tv"
+        android:paddingBottom="8dp">
 
         <TextView
             android:id="@+id/btn_back"
@@ -82,7 +85,10 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/page_h_tv"
+        android:paddingEnd="@dimen/page_h_tv"
+        android:paddingBottom="10dp">
 
         <!-- 左：内置虚拟键盘（遥控器方向键可导航；不支持系统输入法的老盒子友好） -->
         <com.houg.tv.SoftKeyboard
@@ -90,7 +96,6 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1.25"
-            android:layout_marginStart="8dp"
             android:layout_marginEnd="4dp" />
 
         <!-- 中：大家都在搜（热播榜剧名，点击直接搜） -->
@@ -100,17 +105,15 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:orientation="vertical"
-            android:paddingTop="8dp"
-            android:paddingStart="12dp"
-            android:paddingEnd="6dp">
+            android:paddingTop="8dp">
 
             <TextView
+                style="@style/HougDisplay"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/hot_search"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp"
-                android:textStyle="bold" />
+                android:textSize="15sp"
+                android:letterSpacing="0.1" />
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/hot_list"
@@ -135,9 +138,7 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:orientation="vertical"
-            android:paddingTop="8dp"
-            android:paddingStart="6dp"
-            android:paddingEnd="16dp">
+            android:paddingTop="8dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -146,12 +147,12 @@
                 android:gravity="center_vertical">
 
                 <TextView
+                    style="@style/HougDisplay"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/search_history"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
+                    android:textSize="15sp"
+                    android:letterSpacing="0.1" />
 
                 <View
                     android:layout_width="0dp"
@@ -195,8 +196,8 @@
             android:id="@+id/recycler"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
+            android:paddingStart="@dimen/page_h_tv"
+            android:paddingEnd="@dimen/page_h_tv"
             android:paddingTop="8dp"
             android:paddingBottom="8dp"
             android:clipToPadding="false" />
