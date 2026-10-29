@@ -50,6 +50,8 @@ class LogActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         UiScale.applyImmersive(this)
         setContentView(R.layout.activity_log)
+        // 手机端触控目标：40dp 顶栏工具按钮抬到 48dp（TV 不生效）
+        UiScale.enforceTouchTargets(findViewById(android.R.id.content))
 
         logText = findViewById(R.id.log_text)
         infoText = findViewById(R.id.info_text)

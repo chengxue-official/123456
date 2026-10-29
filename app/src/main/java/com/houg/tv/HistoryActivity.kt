@@ -35,6 +35,8 @@ class HistoryActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         UiScale.applyImmersive(this)
         setContentView(R.layout.activity_history)
+        // 手机端触控目标：40dp 返回/Tab/清空按钮抬到 48dp（TV 不生效）
+        UiScale.enforceTouchTargets(findViewById(android.R.id.content))
 
         findViewById<View>(R.id.btn_back).setOnClickListener { finish() }
 

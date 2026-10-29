@@ -62,7 +62,8 @@
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textSize">13sp</item>
-        <item name="android:textColor">@color/faint</item>
+        <!-- 功能性导航文案：faint(#5D574F) 在暖黑底仅 2.6:1，提到 dim(9B948A) 达 6:1 -->
+        <item name="android:textColor">@color/dim</item>
         <item name="android:letterSpacing">0.22</item>
     </style>
 
@@ -121,7 +122,8 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:fontFamily">serif</item>
         <item name="android:textSize">12sp</item>
-        <item name="android:textColor">@color/faint</item>
+        <!-- 分组标题是内容索引，不是纯装饰：faint 2.6:1 太低，提到 dim -->
+        <item name="android:textColor">@color/dim</item>
         <item name="android:letterSpacing">0.26</item>
     </style>
 
@@ -130,7 +132,8 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">4dp</item>
         <item name="android:textSize">10sp</item>
-        <item name="android:textColor">@color/faint</item>
+        <!-- 说明文字承载操作后果，属功能性小字，提到 dim 保证可读 -->
+        <item name="android:textColor">@color/dim</item>
         <item name="android:letterSpacing">0.1</item>
     </style>
 
@@ -158,7 +161,8 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">3dp</item>
         <item name="android:textSize">10sp</item>
-        <item name="android:textColor">@color/faint</item>
+        <!-- 行内提示说明取值含义，属功能性小字，提到 dim -->
+        <item name="android:textColor">@color/dim</item>
         <item name="android:letterSpacing">0.06</item>
     </style>
 
@@ -200,13 +204,14 @@
         <item name="android:clickable">true</item>
     </style>
 
-    <!-- 自定义开关（外层焦点框） -->
+    <!-- 自定义开关（外层焦点框）；center_vertical：手机态运行时抬到 48dp 后轨道仍居中 -->
     <style name="SettingsSwitch">
         <item name="android:layout_width">64dp</item>
         <item name="android:layout_height">34dp</item>
         <item name="android:layout_marginStart">14dp</item>
         <item name="android:background">@drawable/settings_sw_focus</item>
         <item name="android:padding">3dp</item>
+        <item name="android:gravity">center_vertical</item>
         <item name="android:focusable">true</item>
         <item name="android:clickable">true</item>
     </style>

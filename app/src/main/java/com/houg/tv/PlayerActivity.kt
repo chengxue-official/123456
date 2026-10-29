@@ -476,6 +476,8 @@ class PlayerActivity : AppCompatActivity() {
         setContentView(R.layout.activity_player)
         // 手机触摸端：菜单项/选集按钮降级为普通可点击，避免"第一次点击只聚焦、要再点一次"
         UiScale.softenTouchFocus(findViewById(android.R.id.content))
+        // 手机端触控目标：44dp 菜单/选集按钮抬到 48dp（TV 不生效）
+        UiScale.enforceTouchTargets(findViewById(android.R.id.content))
 
         // ===== 保活（用户反馈：看着看着自动进入屏保/电视待机）=====
         // HQQ1 Max 等低内存盒子（总内存 823MB）上，一旦屏保/待机把本 Activity

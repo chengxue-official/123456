@@ -54,6 +54,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         UiScale.applyImmersive(this)
         setContentView(R.layout.activity_main)
+        // 手机端触控目标：40dp 搜索/工具按钮抬到 48dp（TV 不生效）
+        UiScale.enforceTouchTargets(findViewById(android.R.id.content))
 
         progress = findViewById(R.id.progress)
         statusText = findViewById(R.id.status_text)

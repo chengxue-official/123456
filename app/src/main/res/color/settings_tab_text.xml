@@ -2,5 +2,6 @@
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_selected="true" android:color="@color/bone" />
     <item android:state_focused="true" android:color="@color/bone" />
-    <item android:color="@color/faint" />
+    <!-- 未选中态是可读导航文案，提到 dim；选中/聚焦态 bone -->
+    <item android:color="@color/dim" />
 </selector>

@@ -206,6 +206,54 @@ object UiScale {
             for (i in 0 until root.childCount) softenTouchFocus(root.getChildAt(i))
         }
     }
+
+    /** 已挂过 item attach 监听的 RecyclerView（弱引用，避免树被反复 attach 时监听器重复叠加） */
+    private val hookedRecyclers = java.util.WeakHashMap<RecyclerView, Unit>()
+
+    /**
+     * 手机端触控目标：把固定高度不足 48dp 的可交互控件（clickable / focusable）抬到 48dp。
+     *
+     * TV 不生效：遥控器靠 2dp 焦点描边定位，1280×720dp 画布上原型比例已足够大。
+     * 手机上没有指针悬停，32–44dp 的返回 / 工具按钮、筛选胶囊、集格低于 Material 48dp
+     * 触控标准，误触率高。只改 layoutParams 的固定高度（不动 XML），TV 观感零变化；
+     * 方形图标按钮（40×40）同步加宽，保持可点区域为正方形。
+     */
+    fun enforceTouchTargets(root: View, minDp: Int = 48) {
+        if (isTv(root.context)) return
+        val minPx = (minDp * root.resources.displayMetrics.density).roundToInt()
+        raiseTouchTree(root, minPx)
+    }
+
+    /** 递归抬升静态控件；RecyclerView 的 item 由 adapter 动态 inflate，挂 attach 监听逐个抬。 */
+    private fun raiseTouchTree(root: View, minPx: Int) {
+        raiseTouchTarget(root, minPx)
+        if (root is RecyclerView && hookedRecyclers.put(root, Unit) == null) {
+            root.addOnChildAttachStateChangeListener(
+                object : RecyclerView.OnChildAttachStateChangeListener {
+                    override fun onChildViewAttachedToWindow(view: View) {
+                        // attach 发生在测量/布局过程中，直接改 lp 会打断本帧，post 到下一帧再抬
+                        view.post { raiseTouchTree(view, minPx) }
+                    }
+
+                    override fun onChildViewDetachedFromWindow(view: View) = Unit
+                }
+            )
+        }
+        if (root is ViewGroup) {
+            for (i in 0 until root.childCount) raiseTouchTree(root.getChildAt(i), minPx)
+        }
+    }
+
+    private fun raiseTouchTarget(v: View, minPx: Int) {
+        if (!v.isClickable && !v.isFocusable) return
+        val lp = v.layoutParams ?: return
+        if (lp.height in 1 until minPx) {
+            val oldHeight = lp.height
+            lp.height = minPx
+            if (lp.width == oldHeight) lp.width = minPx
+            v.layoutParams = lp
+        }
+    }
 }
 
 /** 网格规划结果：列数 + 每列宽度（px） */

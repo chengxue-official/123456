@@ -70,6 +70,8 @@ class CategoryActivity : AppCompatActivity() {
             if (UiScale.isTv(this)) R.layout.activity_category
             else R.layout.activity_category_phone
         )
+        // 手机端触控目标：32–44dp 按钮/筛选胶囊抬到 48dp（TV 不生效）
+        UiScale.enforceTouchTargets(findViewById(android.R.id.content))
 
         progress = findViewById(R.id.category_progress)
         statusText = findViewById(R.id.category_status)

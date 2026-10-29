@@ -118,7 +118,7 @@
             android:layout_gravity="center"
             android:text="@string/empty"
             android:textSize="14sp"
-            android:textColor="@color/faint"
+            android:textColor="@color/dim"
             android:visibility="gone" />
     </FrameLayout>
 

@@ -27,12 +27,13 @@
         android:layout_marginStart="14dp"
         android:background="@color/hair" />
 
+    <!-- 区块计数注：功能性信息（如「共 12 部」），faint 2.6:1 太低，提到 dim -->
     <TextView
         android:id="@+id/section_hint"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="14dp"
-        android:textColor="@color/faint"
+        android:textColor="@color/dim"
         android:textSize="10sp"
         android:letterSpacing="0.16"
         android:maxLines="1" />

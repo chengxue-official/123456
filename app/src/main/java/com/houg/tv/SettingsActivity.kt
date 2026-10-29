@@ -42,6 +42,8 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         UiScale.applyImmersive(this)
         setContentView(R.layout.activity_settings)
+        // 手机端触控目标：40dp 返回按钮 + 38dp 胶囊 Tab/取值项抬到 48dp（TV 不生效）
+        UiScale.enforceTouchTargets(findViewById(android.R.id.content))
 
         applyPageInsets()
 

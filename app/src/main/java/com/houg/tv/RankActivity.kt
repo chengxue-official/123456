@@ -51,6 +51,8 @@ class RankActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         configureImmersive()
         setContentView(R.layout.activity_rank)
+        // 手机端触控目标：40dp 返回按钮抬到 48dp（TV 不生效）
+        UiScale.enforceTouchTargets(findViewById(android.R.id.content))
 
         progress = findViewById(R.id.rank_progress)
         statusText = findViewById(R.id.rank_status)

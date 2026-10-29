@@ -48,6 +48,8 @@ class DetailActivity : AppCompatActivity() {
         )
         // 手机触摸端：按钮降级为普通可点击，避免第一次点击只聚焦
         UiScale.softenTouchFocus(findViewById(android.R.id.content))
+        // 手机端触控目标：32–44dp 按钮/胶囊抬到 48dp（TV 不生效）
+        UiScale.enforceTouchTargets(findViewById(android.R.id.content))
 
         seriesId = intent.getStringExtra(EXTRA_SERIES_ID) ?: ""
         seriesTitle = intent.getStringExtra(EXTRA_TITLE) ?: ""

@@ -75,6 +75,8 @@ class SearchActivity : AppCompatActivity(), LanInputReceiver {
             if (UiScale.isTv(this)) R.layout.activity_search
             else R.layout.activity_search_phone
         )
+        // 手机端触控目标：32–44dp 按钮/胶囊抬到 48dp（TV 不生效）
+        UiScale.enforceTouchTargets(findViewById(android.R.id.content))
 
         input = findViewById(R.id.search_input)
         progress = findViewById(R.id.progress)
