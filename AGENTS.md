@@ -1,5 +1,10 @@
 # HougTime 仓库协作约定
 
+## 仓库分工（两个独立仓库，勿混）
+
+- **源码仓 = `origin` → `https://github.com/chengxue-official/123456.git`**：全部 App 源码、构建脚本、文档，`git push` 只推这里。
+- **热更新仓 → `https://github.com/chengxue-official/hongguoA.git`**：只放热更新发布物（`update.json` 清单 + APK），由 EdgeOne Pages 绑定自动部署到 `https://www.hongguo.kdns.fr`（见 `UpdateChecker.kt`）。发版推包走这个仓，**不要**把源码提交混进来。
+
 ## Git 工作流（用户已授权）
 
 - **代码改动自动入库**：功能/修复代码改完并验证通过（编译 `assembleDebug` 退出码 0，或对应的测试/静态检查通过）后，直接 `git add`（按文件名逐个加，不用 `-A`）+ `git commit`，不需要再问。
