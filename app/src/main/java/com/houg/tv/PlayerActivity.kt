@@ -371,6 +371,11 @@ class PlayerActivity : AppCompatActivity() {
             // 边栏只在「暂停」与「拖动进度条」时常驻；恢复播放立即收起。
             if (isPlaying) {
                 handler.removeCallbacks(hideControlsRunnable)
+                // 暂停时焦点停在右上角「菜单」按钮上，恢复播放后交还隐形锚点。
+                // 必须先还焦点再收起顶栏：按钮变 GONE 会先丢焦点，之后判断失效。
+                if (::btnMenuTop.isInitialized && btnMenuTop.hasFocus()) {
+                    findViewById<View>(R.id.focus_anchor).requestFocus()
+                }
                 if (!tracking) {
                     topBar.visibility = View.GONE
                     controlBar.visibility = View.GONE
@@ -2138,6 +2143,15 @@ class PlayerActivity : AppCompatActivity() {
         controlBar.visibility = View.VISIBLE
         // 顶栏时钟：显示边栏时对齐一次，避免停在上一分钟
         clockTick.run()
+        // TV 遥控器可能没有菜单键：暂停时把焦点交给右上角「菜单」按钮，
+        // 按确定键即打开菜单。方向键仍由 Activity.onKeyDown 处理（快进/切集），
+        // 播放中或菜单/选集弹窗已打开时不抢焦点。
+        if (UiScale.isTv(this) && player?.playWhenReady == false &&
+            menuPanel.visibility != View.VISIBLE &&
+            !(::epPickerRoot.isInitialized && epPickerRoot.visibility == View.VISIBLE)
+        ) {
+            btnMenuTop.requestFocus()
+        }
         updateProgressText()
         // 播放中的调用（如快进提示）不应让边栏长驻：仍挂自动隐藏。
         if (player?.isPlaying == true) {
