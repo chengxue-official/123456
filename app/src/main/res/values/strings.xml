@@ -56,7 +56,7 @@
     <string name="scan_url_hint">也可手动在手机浏览器输入：%1$s</string>
     <string name="lan_input_keep_alive">关闭窗口不影响，10 分钟内手机仍可继续输入</string>
     <string name="lan_input_received">已收到手机输入：%1$s</string>
-    <string name="community_hint">交流群 1130515703 · 免费分享，谨防受骗</string>
+    <string name="community_hint">交流群 1129983614 · 免费分享，谨防受骗</string>
 
     <!-- 首页（HOUG CINEMA：mast 品牌 + Hero + 区块 + 底部 dock） -->
     <string name="home_headline">今日主打</string>
@@ -197,6 +197,6 @@
     <string name="set_version">版本号</string>
     <string name="set_version_fmt">%1$s (%2$d)</string>
     <string name="set_open_action">打开</string>
-    <string name="set_ver_footer_fmt">红果TV · %1$s (%2$d) · 交流群 1130515703 · 数据仅对接红果</string>
+    <string name="set_ver_footer_fmt">红果TV · %1$s (%2$d) · 交流群 1129983614 · 数据仅对接红果</string>
     <string name="cancel">取消</string>
 </resources>
