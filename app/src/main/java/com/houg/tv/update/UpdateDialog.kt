@@ -102,7 +102,7 @@ object UpdateDialog {
         AlertDialog.Builder(activity)
             .setTitle("需要开启安装权限")
             .setMessage(
-                "请在系统设置中允许「ALL TV」安装应用后重试：\n\n" +
+                "请在系统设置中允许「红果TV」安装应用后重试：\n\n" +
                         "· 小米/红米电视：设置 → 账号与安全 → 安装未知来源应用 → 允许\n" +
                         "· 若提示「纯净模式」拦截，请一并关闭纯净模式\n" +
                         "· 其他品牌：设置 → 安全 → 未知来源 / 应用安装权限\n\n" +

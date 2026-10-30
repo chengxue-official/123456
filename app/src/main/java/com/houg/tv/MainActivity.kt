@@ -444,7 +444,7 @@ class MainActivity : AppCompatActivity() {
     private fun showExitConfirm() {
         AlertDialog.Builder(this)
             .setTitle("退出")
-            .setMessage("确定退出ALL TV吗？")
+            .setMessage("确定退出红果TV吗？")
             .setPositiveButton("退出") { _, _ -> finish() }
             .setNegativeButton("取消", null)
             .setCancelable(true)

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">ALL TV</string>
+    <string name="app_name">红果TV</string>
     <string name="nav_search">搜索</string>
     <string name="nav_history">历史</string>
     <string name="nav_favorite">收藏</string>
@@ -197,6 +197,6 @@
     <string name="set_version">版本号</string>
     <string name="set_version_fmt">%1$s (%2$d)</string>
     <string name="set_open_action">打开</string>
-    <string name="set_ver_footer_fmt">ALL TV · %1$s (%2$d) · 交流群 1130515703 · 数据仅对接红果</string>
+    <string name="set_ver_footer_fmt">红果TV · %1$s (%2$d) · 交流群 1130515703 · 数据仅对接红果</string>
     <string name="cancel">取消</string>
 </resources>
