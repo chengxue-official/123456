@@ -64,6 +64,8 @@ class DanmakuView @JvmOverloads constructor(
     private var textSizePx = 0f
     private var lineHeightPx = 0f
     private var lastWidth = -1
+    /** 用户选择的字号倍率（播放页菜单「弹幕大小」：小 0.8 / 中 1.0 / 大 1.3） */
+    private var textScale = 1f
 
     init {
         strokePaint.style = Paint.Style.STROKE
@@ -156,10 +158,26 @@ class DanmakuView @JvmOverloads constructor(
 
     private fun updateTextSize() {
         val sp = if (lastWidth in 1..599) 16f else 20f
-        textSizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, resources.displayMetrics)
+        textSizePx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP, sp * textScale, resources.displayMetrics
+        )
         lineHeightPx = textSizePx * 1.5f
         fillPaint.textSize = textSizePx
         strokePaint.textSize = textSizePx
+    }
+
+    /**
+     * 设置弹幕字号倍率（播放页菜单「弹幕大小」）。
+     * 已在飞的弹幕宽度是按旧字号算的，直接清掉重排，避免轨道判定错位；
+     * 待出场队列保留，不会把已经播过的弹幕重放一遍。
+     */
+    fun setTextScale(scale: Float) {
+        val s = scale.coerceIn(0.6f, 2f)
+        if (s == textScale) return
+        textScale = s
+        updateTextSize()
+        flying.clear()
+        invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {

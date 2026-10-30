@@ -225,6 +225,9 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var menuRotate: TextView
     private lateinit var menuQuality: TextView
     private lateinit var menuDanmaku: TextView
+    private lateinit var menuDanmakuSize: TextView
+    /** 弹幕字号档位下标，见 DANMAKU_SCALES（0 小 / 1 中 / 2 大） */
+    private var danmakuScaleIndex = 1
     private lateinit var menuSpeed: TextView
     private lateinit var menuEpisodes: TextView
     private lateinit var menuDecoder: TextView
@@ -640,6 +643,7 @@ class PlayerActivity : AppCompatActivity() {
         menuRotate = findViewById(R.id.menu_rotate)
         menuQuality = findViewById(R.id.menu_quality)
         menuDanmaku = findViewById(R.id.menu_danmaku)
+        menuDanmakuSize = findViewById(R.id.menu_danmaku_size)
         menuSpeed = findViewById(R.id.menu_speed)
         menuEpisodes = findViewById(R.id.menu_episodes)
         menuDecoder = findViewById(R.id.menu_decoder)
@@ -682,6 +686,8 @@ class PlayerActivity : AppCompatActivity() {
             .coerceIn(0, ASPECT_MODES.size - 1)
         speedIndex = prefs.getInt(PREF_SPEED, 2).coerceIn(0, SPEEDS.size - 1)
         danmakuEnabled = prefs.getBoolean(PREF_DANMAKU, true)
+        danmakuScaleIndex = prefs.getInt(PREF_DANMAKU_SCALE, 1)
+            .coerceIn(0, DANMAKU_SCALES.size - 1)
         decoderSoft = prefs.getBoolean(PREF_DECODER_SOFT, false)
         qualityIndex = prefs.getInt(PREF_QUALITY, QUALITY_AUTO)
             .coerceIn(0, QUALITY_MODES.size - 1)
@@ -714,6 +720,8 @@ class PlayerActivity : AppCompatActivity() {
         updateDanmakuLabel()
         updateDecoderLabel()
         applyDanmakuVisibility()
+        applyDanmakuScale()
+        updateDanmakuSizeLabel()
         updateEpisodeInfo()
         bindControls()
 
@@ -738,6 +746,7 @@ class PlayerActivity : AppCompatActivity() {
         if (UiScale.isTv(this)) menuRotate.visibility = View.GONE
         menuQuality.setOnClickListener { cycleQuality() }
         menuDanmaku.setOnClickListener { toggleDanmaku() }
+        menuDanmakuSize.setOnClickListener { cycleDanmakuSize() }
         menuSpeed.setOnClickListener { cycleSpeed() }
         menuEpisodes.setOnClickListener { openEpisodePicker() }
         menuDecoder.setOnClickListener { cycleDecoder() }
@@ -1592,6 +1601,32 @@ class PlayerActivity : AppCompatActivity() {
         menuDanmaku.text = if (danmakuEnabled) getString(R.string.menu_danmaku_on) else getString(R.string.menu_danmaku_off)
     }
 
+    /** 弹幕字号循环切换：小 → 中 → 大，立即生效并持久化。 */
+    private fun cycleDanmakuSize() {
+        danmakuScaleIndex = (danmakuScaleIndex + 1) % DANMAKU_SCALES.size
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putInt(PREF_DANMAKU_SCALE, danmakuScaleIndex).apply()
+        applyDanmakuScale()
+        updateDanmakuSizeLabel()
+        toast(getString(R.string.menu_danmaku_size) + "：" + danmakuScaleLabel())
+    }
+
+    private fun applyDanmakuScale() {
+        danmakuView.setTextScale(DANMAKU_SCALES[danmakuScaleIndex])
+    }
+
+    private fun danmakuScaleLabel(): String = getString(
+        when (danmakuScaleIndex) {
+            0 -> R.string.danmaku_scale_small
+            2 -> R.string.danmaku_scale_large
+            else -> R.string.danmaku_scale_medium
+        }
+    )
+
+    private fun updateDanmakuSizeLabel() {
+        menuDanmakuSize.text = getString(R.string.menu_danmaku_size) + "：" + danmakuScaleLabel()
+    }
+
     private fun applyDanmakuVisibility() {
         danmakuView.visibility = if (danmakuEnabled) View.VISIBLE else View.GONE
     }
@@ -2218,6 +2253,7 @@ class PlayerActivity : AppCompatActivity() {
         updateQualityLabel()
         updateSpeedLabel()
         updateDanmakuLabel()
+        updateDanmakuSizeLabel()
         updateDecoderLabel()
         // 触屏设备不抢焦点，避免菜单首项出现红框高亮（TV 需焦点才能用遥控器选择）
         if (UiScale.isTv(this)) menuFill.post { menuFill.requestFocus() }
@@ -2760,6 +2796,8 @@ class PlayerActivity : AppCompatActivity() {
         const val PREF_QUALITY = "quality_mode"
         const val PREF_SPEED = "playback_speed"
         const val PREF_DANMAKU = "danmaku_enabled"
+        /** 弹幕字号档位下标（0 小 / 1 中 / 2 大），播放页菜单可调 */
+        const val PREF_DANMAKU_SCALE = "danmaku_scale"
         const val PREF_DECODER_SOFT = "decoder_soft"
         /** 遥控快进/快退基础步长（ms），设置页可调，默认 15 秒 */
         const val PREF_SEEK_STEP = "seek_step"
@@ -2767,6 +2805,9 @@ class PlayerActivity : AppCompatActivity() {
         const val PREF_AUTO_NEXT = "auto_next"
         /** 弹幕窗口长度（ms） */
         private const val DANMAKU_WINDOW_MS = 30000L
+
+        /** 弹幕字号倍率：小 / 中 / 大（基准字号见 DanmakuView.updateTextSize） */
+        private val DANMAKU_SCALES = floatArrayOf(0.8f, 1f, 1.3f)
 
         /** 弹幕失败窗口重试：最多次数与退避间隔（D-08） */
         private const val DANMAKU_MAX_ATTEMPTS = 3

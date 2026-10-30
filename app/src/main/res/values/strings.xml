@@ -119,6 +119,10 @@
     <string name="quality_switched">清晰度已切换为%1$s，正在重新起播</string>
     <string name="menu_danmaku_on">弹幕：开</string>
     <string name="menu_danmaku_off">弹幕：关</string>
+    <string name="menu_danmaku_size">弹幕大小</string>
+    <string name="danmaku_scale_small">小</string>
+    <string name="danmaku_scale_medium">中</string>
+    <string name="danmaku_scale_large">大</string>
     <string name="menu_speed">倍速</string>
     <string name="menu_decoder">解码</string>
     <string name="menu_decoder_hard">硬解</string>
