@@ -46,16 +46,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var progress: View
     private lateinit var statusText: TextView
 
-    /* ==================== 推荐（导航栏） ==================== */
-
-    /** 当前内容区是否为「推荐」流（点击导航「推荐」进入，再点换一批） */
-    private var recommendMode = false
-    /** 下一次要拉的榜单页码 */
-    private var recommendPage = 1
-    /** 推荐流是否还能下滑继续翻页（榜单 hasMore） */
-    private var recommendHasMore = true
-    private var recommendLoading = false
-
     /* ==================== 首页时钟 ==================== */
 
     private lateinit var clockText: TextView
@@ -111,11 +101,7 @@ class MainActivity : AppCompatActivity() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
                 val lm = rv.layoutManager as? GridLayoutManager ?: return
                 val last = lm.findLastVisibleItemPosition()
-                if (last < adapter.itemCount - 6) return
-                if (recommendMode) {
-                    // 推荐流：滑到底继续翻下一名单页，追加到网格末尾
-                    if (recommendHasMore && !recommendLoading) loadRecommend(append = true)
-                } else if (hasMore && !loading) {
+                if (last >= adapter.itemCount - 6 && hasMore && !loading) {
                     loadPage(false)
                 }
             }
@@ -236,27 +222,9 @@ class MainActivity : AppCompatActivity() {
 
     /* ==================== dock ==================== */
 
-    private data class DockEntry(
-        val key: String, val itemId: Int, val labelId: Int, val barId: Int
-    )
-
-    private val dockEntries = listOf(
-        DockEntry("home", R.id.dock_home, R.id.dock_home_label, R.id.dock_home_bar),
-        DockEntry("recommend", R.id.dock_recommend, R.id.dock_recommend_label, R.id.dock_recommend_bar),
-        DockEntry("category", R.id.dock_category, R.id.dock_category_label, R.id.dock_category_bar),
-        DockEntry("rank", R.id.dock_rank, R.id.dock_rank_label, R.id.dock_rank_bar),
-        DockEntry("search", R.id.dock_search, R.id.dock_search_label, R.id.dock_search_bar),
-        DockEntry("fav", R.id.dock_fav, R.id.dock_fav_label, R.id.dock_fav_bar),
-        DockEntry("history", R.id.dock_history, R.id.dock_history_label, R.id.dock_history_bar),
-        DockEntry("settings", R.id.dock_settings, R.id.dock_settings_label, R.id.dock_settings_bar)
-    )
-
     private fun setupDock() {
         val actions = mapOf<String, () -> Unit>(
-            // 首页：已在推荐流则切回原内容流，否则回到顶部
-            "home" to { exitRecommend() },
-            // 推荐：进入按红果热度的推荐流；已在推荐流时再点 = 换一批
-            "recommend" to { toggleRecommend() },
+            "home" to { recycler.smoothScrollToPosition(0) },
             "category" to { startActivity(Intent(this, CategoryActivity::class.java)) },
             "rank" to { startActivity(Intent(this, RankActivity::class.java)) },
             "search" to { startActivity(Intent(this, SearchActivity::class.java)) },
@@ -275,7 +243,16 @@ class MainActivity : AppCompatActivity() {
             // 设置入口：播放偏好 / 外观形态 / 内容推荐 / 系统高级
             "settings" to { startActivity(Intent(this, SettingsActivity::class.java)) }
         )
-        dockEntries.forEach { entry ->
+        data class DockEntry(val key: String, val itemId: Int, val labelId: Int, val barId: Int)
+        listOf(
+            DockEntry("home", R.id.dock_home, R.id.dock_home_label, R.id.dock_home_bar),
+            DockEntry("category", R.id.dock_category, R.id.dock_category_label, R.id.dock_category_bar),
+            DockEntry("rank", R.id.dock_rank, R.id.dock_rank_label, R.id.dock_rank_bar),
+            DockEntry("search", R.id.dock_search, R.id.dock_search_label, R.id.dock_search_bar),
+            DockEntry("fav", R.id.dock_fav, R.id.dock_fav_label, R.id.dock_fav_bar),
+            DockEntry("history", R.id.dock_history, R.id.dock_history_label, R.id.dock_history_bar),
+            DockEntry("settings", R.id.dock_settings, R.id.dock_settings_label, R.id.dock_settings_bar)
+        ).forEach { entry ->
             val item = findViewById<View>(entry.itemId)
             val label = item.findViewById<TextView>(entry.labelId)
             val bar = item.findViewById<View>(entry.barId)
@@ -286,126 +263,16 @@ class MainActivity : AppCompatActivity() {
                         this, if (hasFocus) R.color.bone else R.color.faint
                     )
                 )
-                // 当前页（首页 / 推荐）指示条常亮
+                // 首页是当前页，指示条常亮
                 bar.visibility =
-                    if (hasFocus || isDockActive(entry.key)) View.VISIBLE else View.INVISIBLE
+                    if (hasFocus || entry.key == "home") View.VISIBLE else View.INVISIBLE
             }
         }
-        updateDockBars()
-    }
-
-    /** 哪个 dock 项代表「当前内容」：首页与推荐互斥 */
-    private fun isDockActive(key: String): Boolean =
-        (key == "home" && !recommendMode) || (key == "recommend" && recommendMode)
-
-    private fun updateDockBars() {
-        dockEntries.forEach { e ->
-            findViewById<View>(e.barId).visibility =
-                if (isDockActive(e.key)) View.VISIBLE else View.INVISIBLE
-        }
-    }
-
-    /* ==================== 推荐（导航栏） ==================== */
-
-    /**
-     * 导航「推荐」：把内容区切换成「按红果热度」的推荐流（热播榜），
-     * 已处于推荐流时再点一次 = 换一批（翻下一名单页）。
-     * 返回首页（点「首页」）时恢复原有的 Hero / 继续观看 / 热播 / 新上架 流。
-     */
-    private fun toggleRecommend() {
-        if (recommendLoading) return
-        if (!recommendMode) {
-            recommendMode = true
-            recommendPage = 1
-            recommendHasMore = true
-            updateDockBars()
-        }
-        // 首次进入 / 已处于推荐流（换一批）：都用当前页码整批替换
-        loadRecommend(append = false)
-    }
-
-    /**
-     * @param append true = 下滑翻页追加到末尾；false = 整批替换（首次进入或「换一批」）
-     */
-    private fun loadRecommend(append: Boolean) {
-        if (recommendLoading) return
-        recommendLoading = true
-        val page = recommendPage
-        if (!append) {
-            progress.visibility = View.VISIBLE
-            statusText.visibility = View.GONE
-        }
-        scope.launch {
-            try {
-                val rankPage = withContext(Dispatchers.IO) {
-                    App.netClient.ranking(NetClient.RANK_BOARDS[0], page)
-                }
-                val dramas = rankPage.items.map { it.drama }
-                if (append) {
-                    adapter.appendCatalog(dramas)
-                } else {
-                    // 推荐流只留网格：Hero / 继续观看 / 今日热播 先收起，标题换成「推荐」
-                    adapter.setHero(null)
-                    adapter.setContinue(emptyList())
-                    adapter.setHot(emptyList())
-                    adapter.setCatalogSection(
-                        R.string.home_recommend_title, R.string.home_recommend_hint
-                    )
-                    adapter.submitCatalog(dramas)
-                    recycler.scrollToPosition(0)
-                }
-                // 推荐流按榜单页翻，不走「新上架」的 offset 分页
-                hasMore = false
-                recommendHasMore = rankPage.hasMore
-                recommendPage = if (rankPage.hasMore) rankPage.page + 1 else 1
-            } catch (e: Exception) {
-                Toast.makeText(
-                    this@MainActivity, R.string.home_recommend_failed, Toast.LENGTH_SHORT
-                ).show()
-                if (append) {
-                    // 追加失败先停掉自动翻页，避免滑到底反复重试刷屏；点「推荐」可重来
-                    recommendHasMore = false
-                } else if (recommendMode && adapter.currentCatalog().isEmpty()) {
-                    // 首次进推荐就失败且没有内容：退回首页原内容流，避免停在空白页
-                    recommendMode = false
-                    recommendPage = 1
-                    recommendHasMore = true
-                    adapter.setCatalogSection(R.string.section_new, R.string.section_new_hint)
-                    updateDockBars()
-                    applyRecPreferences()
-                }
-            } finally {
-                progress.visibility = View.GONE
-                recommendLoading = false
-            }
-        }
-    }
-
-    /** 回到首页原内容流：恢复各区块标题与数据（会重新拉一次新上架） */
-    private fun exitRecommend() {
-        if (!recommendMode) {
-            recycler.smoothScrollToPosition(0)
-            return
-        }
-        recommendMode = false
-        recommendPage = 1
-        recommendHasMore = true
-        updateDockBars()
-        adapter.setCatalogSection(R.string.section_new, R.string.section_new_hint)
-        adapter.submitCatalog(emptyList())
-        adapter.setHero(null)
-        nextOffset = 0
-        sessionId = ""
-        hasMore = false
-        applyRecPreferences()
-        recycler.scrollToPosition(0)
     }
 
     /* ==================== 数据 ==================== */
 
     private fun loadPage(reset: Boolean) {
-        // 推荐流里不做「新上架」的 offset 分页
-        if (recommendMode) return
         if (loading) return
         if (!recEnabled(SettingsActivity.REC_NEW)) return
         loading = true
@@ -531,8 +398,6 @@ class MainActivity : AppCompatActivity() {
      * 继续观看只看历史；热播/新上架关掉就清空且不再请求，重新打开补一次。
      */
     private fun applyRecPreferences() {
-        // 推荐流里不恢复首页各区块：切回「首页」时 exitRecommend 会统一重建
-        if (recommendMode) return
         adapter.setContinue(
             if (recEnabled(SettingsActivity.REC_CONTINUE)) {
                 App.watchHistory.list().take(3)

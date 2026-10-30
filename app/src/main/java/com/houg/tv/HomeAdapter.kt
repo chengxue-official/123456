@@ -41,17 +41,6 @@ class HomeAdapter(
     private var hotItems: List<NetClient.RankItem> = emptyList()
     private var continueKey = ""
     private var hotKey = ""
-    /** 网格区块标题（默认「新上架」；推荐流切换为「推荐」） */
-    private var catalogTitleRes = R.string.section_new
-    private var catalogHintRes = R.string.section_new_hint
-
-    /** 切换网格区块标题（首页「推荐」流用），标题变化时重绘 */
-    fun setCatalogSection(titleRes: Int, hintRes: Int) {
-        if (titleRes == catalogTitleRes && hintRes == catalogHintRes) return
-        catalogTitleRes = titleRes
-        catalogHintRes = hintRes
-        rebuild()
-    }
 
     /** 新上架网格的起始行号（之前的都是整行；空网格返回 MAX_VALUE 避免误判） */
     fun gridStartPosition(): Int =
@@ -117,7 +106,7 @@ class HomeAdapter(
             rows.add(Row.Hot(hotItems))
         }
         if (catalog.isNotEmpty()) {
-            rows.add(Row.Section(catalogTitleRes, catalogHintRes))
+            rows.add(Row.Section(R.string.section_new, R.string.section_new_hint))
             for (d in catalog) rows.add(Row.DramaRow(d))
         }
         notifyDataSetChanged()

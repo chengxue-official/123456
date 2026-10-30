@@ -135,22 +135,6 @@
             </LinearLayout>
 
             <LinearLayout
-                android:id="@+id/dock_recommend"
-                style="@style/DockItem"
-                android:tag="recommend"
-                android:layout_marginStart="24dp">
-
-                <TextView
-                    android:id="@+id/dock_recommend_label"
-                    style="@style/DockLabel"
-                    android:text="@string/nav_recommend" />
-
-                <View
-                    android:id="@+id/dock_recommend_bar"
-                    style="@style/DockBar" />
-            </LinearLayout>
-
-            <LinearLayout
                 android:id="@+id/dock_category"
                 style="@style/DockItem"
                 android:tag="category"
