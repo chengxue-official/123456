@@ -52,6 +52,8 @@ class MainActivity : AppCompatActivity() {
     private var recommendMode = false
     /** 下一次要拉的榜单页码 */
     private var recommendPage = 1
+    /** 推荐流是否还能下滑继续翻页（榜单 hasMore） */
+    private var recommendHasMore = true
     private var recommendLoading = false
 
     /* ==================== 首页时钟 ==================== */
@@ -109,7 +111,11 @@ class MainActivity : AppCompatActivity() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
                 val lm = rv.layoutManager as? GridLayoutManager ?: return
                 val last = lm.findLastVisibleItemPosition()
-                if (last >= adapter.itemCount - 6 && hasMore && !loading) {
+                if (last < adapter.itemCount - 6) return
+                if (recommendMode) {
+                    // 推荐流：滑到底继续翻下一名单页，追加到网格末尾
+                    if (recommendHasMore && !recommendLoading) loadRecommend(append = true)
+                } else if (hasMore && !loading) {
                     loadPage(false)
                 }
             }
@@ -311,42 +317,59 @@ class MainActivity : AppCompatActivity() {
         if (!recommendMode) {
             recommendMode = true
             recommendPage = 1
-        } else {
-            recommendPage++
+            recommendHasMore = true
+            updateDockBars()
         }
-        updateDockBars()
-        loadRecommend()
+        // 首次进入 / 已处于推荐流（换一批）：都用当前页码整批替换
+        loadRecommend(append = false)
     }
 
-    private fun loadRecommend() {
+    /**
+     * @param append true = 下滑翻页追加到末尾；false = 整批替换（首次进入或「换一批」）
+     */
+    private fun loadRecommend(append: Boolean) {
         if (recommendLoading) return
         recommendLoading = true
         val page = recommendPage
-        progress.visibility = View.VISIBLE
-        statusText.visibility = View.GONE
+        if (!append) {
+            progress.visibility = View.VISIBLE
+            statusText.visibility = View.GONE
+        }
         scope.launch {
             try {
                 val rankPage = withContext(Dispatchers.IO) {
                     App.netClient.ranking(NetClient.RANK_BOARDS[0], page)
                 }
-                // 推荐流只留网格：Hero / 继续观看 / 今日热播 先收起，标题换成「推荐」
-                adapter.setHero(null)
-                adapter.setContinue(emptyList())
-                adapter.setHot(emptyList())
-                adapter.setCatalogSection(R.string.home_recommend_title, R.string.home_recommend_hint)
-                adapter.submitCatalog(rankPage.items.map { it.drama })
+                val dramas = rankPage.items.map { it.drama }
+                if (append) {
+                    adapter.appendCatalog(dramas)
+                } else {
+                    // 推荐流只留网格：Hero / 继续观看 / 今日热播 先收起，标题换成「推荐」
+                    adapter.setHero(null)
+                    adapter.setContinue(emptyList())
+                    adapter.setHot(emptyList())
+                    adapter.setCatalogSection(
+                        R.string.home_recommend_title, R.string.home_recommend_hint
+                    )
+                    adapter.submitCatalog(dramas)
+                    recycler.scrollToPosition(0)
+                }
                 // 推荐流按榜单页翻，不走「新上架」的 offset 分页
                 hasMore = false
-                recycler.scrollToPosition(0)
-                recommendPage = if (rankPage.hasMore) rankPage.page else 1
+                recommendHasMore = rankPage.hasMore
+                recommendPage = if (rankPage.hasMore) rankPage.page + 1 else 1
             } catch (e: Exception) {
                 Toast.makeText(
                     this@MainActivity, R.string.home_recommend_failed, Toast.LENGTH_SHORT
                 ).show()
-                // 首次进推荐就失败且没有内容：退回首页原内容流，避免停在空白页
-                if (recommendMode && adapter.currentCatalog().isEmpty()) {
+                if (append) {
+                    // 追加失败先停掉自动翻页，避免滑到底反复重试刷屏；点「推荐」可重来
+                    recommendHasMore = false
+                } else if (recommendMode && adapter.currentCatalog().isEmpty()) {
+                    // 首次进推荐就失败且没有内容：退回首页原内容流，避免停在空白页
                     recommendMode = false
                     recommendPage = 1
+                    recommendHasMore = true
                     adapter.setCatalogSection(R.string.section_new, R.string.section_new_hint)
                     updateDockBars()
                     applyRecPreferences()
@@ -366,6 +389,7 @@ class MainActivity : AppCompatActivity() {
         }
         recommendMode = false
         recommendPage = 1
+        recommendHasMore = true
         updateDockBars()
         adapter.setCatalogSection(R.string.section_new, R.string.section_new_hint)
         adapter.submitCatalog(emptyList())
