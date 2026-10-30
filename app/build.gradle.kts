@@ -16,6 +16,9 @@ android {
         targetSdk = 35
         versionCode = 129
         versionName = "2.0.1"
+        // 32 位包：原生库只剩 libheifdecoder（封面 HEIC 解码），只打 armeabi-v7a。
+        // 老电视盒子/32 位系统可直接安装，64 位设备按 32 位模式运行。
+        ndk { abiFilters += listOf("armeabi-v7a") }
     }
 
     // 传统 View 体系，不使用 Compose

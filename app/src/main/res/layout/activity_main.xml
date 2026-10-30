@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  HOUG CINEMA 首页：顶部 mast（品牌行）+ 中央内容流（RecyclerView 统一承载
-  Hero / 继续观看 / 今日热播 / 新上架）+ 底部 dock（主导航）。
+  HOUG CINEMA 首页：顶部 mast（品牌行）+ 顶部 dock（主导航）+ 中央内容流
+  （RecyclerView 统一承载 Hero / 继续观看 / 今日热播 / 新上架）。
+  导航放顶部而非底部：电视用遥控器操作，底部贴边既在 overscan 危险区，
+  向下翻页后焦点也容易被内容吞掉；置顶后按「上」即可回导航。
   间距 token 由 MainActivity 按 TV / 手机形态注入（applyPageInsets）。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -102,39 +104,7 @@
 
     </LinearLayout>
 
-    <!-- 中央内容流 -->
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1">
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recycler"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:overScrollMode="never"
-            android:clipToPadding="false" />
-
-        <ProgressBar
-            android:id="@+id/progress"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:indeterminateTint="@color/accent"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/status_text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="@string/empty"
-            android:textSize="14sp"
-            android:textColor="@color/dim"
-            android:visibility="gone" />
-    </FrameLayout>
-
-    <!-- 底部 dock：主导航 -->
+    <!-- 顶部 dock：主导航（TV 遥控器向上直达，不再贴屏幕底边） -->
     <HorizontalScrollView
         android:id="@+id/dock_scroll"
         android:layout_width="match_parent"
@@ -261,4 +231,36 @@
             </LinearLayout>
         </LinearLayout>
     </HorizontalScrollView>
+
+    <!-- 中央内容流 -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recycler"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:overScrollMode="never"
+            android:clipToPadding="false" />
+
+        <ProgressBar
+            android:id="@+id/progress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:indeterminateTint="@color/accent"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/status_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="@string/empty"
+            android:textSize="14sp"
+            android:textColor="@color/dim"
+            android:visibility="gone" />
+    </FrameLayout>
 </LinearLayout>

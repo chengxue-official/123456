@@ -29,7 +29,7 @@ import java.util.Locale
 
 /**
  * 首页（HOUG CINEMA 影院流）：
- * mast 品牌行 + RecyclerView 内容流（Hero / 继续观看 / 今日热播 / 新上架）+ 底部 dock。
+ * mast 品牌行 + 顶部 dock + RecyclerView 内容流（Hero / 继续观看 / 今日热播 / 新上架）。
  * 内容流与新上架共用一个 GridLayoutManager——整行区块 span=列数，
  * 网格卡片 span=1（见 HomeAdapter.gridStartPosition）。
  */
@@ -126,16 +126,12 @@ class MainActivity : AppCompatActivity() {
         val h = UiScale.pageH(this)
         findViewById<View>(R.id.mast).setPadding(h, UiScale.pageTop(this), h, 0)
         findViewById<View>(R.id.dock_row).setPadding(h, 0, h, 0)
-        recycler.setPadding(h, 0, h, 0)
         if (UiScale.isTv(this)) {
-            // TV overscan：dock 抬出底部 5% 安全区；条高同步加高，避免压扁 52dp 导航项
-            val bottom = UiScale.pageTop(this)
-            val dock = findViewById<View>(R.id.dock_scroll)
-            val lp = dock.layoutParams
-            lp.height += bottom
-            dock.layoutParams = lp
-            dock.setPadding(0, 0, 0, bottom)
+            // dock 已移到 mast 下方（顶部），底部不再需要留 overscan 边；
+            // 改为给内容流垫底，避免 TV overscan 裁掉最后一行卡片。
+            recycler.setPadding(h, 0, h, UiScale.pageTop(this))
         } else {
+            recycler.setPadding(h, 0, h, 0)
             // 原型 body.m：手机 mast 只留品牌 + 搜索，避免交流群文案把按钮挤出屏
             findViewById<View>(R.id.brand_sub).visibility = View.GONE
             findViewById<View>(R.id.community_hint).visibility = View.GONE
