@@ -50,6 +50,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.RandomAccessFile
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
 
@@ -228,6 +230,20 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var menuDecoder: TextView
     private lateinit var menuExit: TextView
     private lateinit var btnMenu: TextView
+    /** 顶栏右上角的菜单入口（TV：遥控器无菜单键时的替代入口）。 */
+    private lateinit var btnMenuTop: TextView
+    /** 顶栏时钟（TV 全屏无状态栏，暂停/操作时显示当前时间）。 */
+    private lateinit var clockText: TextView
+    private val clockFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+    private val clockTick = object : Runnable {
+        override fun run() {
+            clockText.text = clockFormat.format(Date())
+            // 先清掉待执行的重复投递（showControls 会主动对齐一次），再挂下一次
+            handler.removeCallbacks(this)
+            // 对齐整分刷新，不逐秒空转
+            handler.postDelayed(this, 60_000L - System.currentTimeMillis() % 60_000L)
+        }
+    }
     private lateinit var progress: View
     private lateinit var errorPanel: View
     private lateinit var errorText: TextView
@@ -624,6 +640,8 @@ class PlayerActivity : AppCompatActivity() {
         menuDecoder = findViewById(R.id.menu_decoder)
         menuExit = findViewById(R.id.menu_exit)
         btnMenu = findViewById(R.id.btn_menu)
+        btnMenuTop = findViewById(R.id.btn_menu_top)
+        clockText = findViewById(R.id.clock_text)
         progress = findViewById(R.id.progress)
         errorPanel = findViewById(R.id.error_panel)
         errorText = findViewById(R.id.error_text)
@@ -723,6 +741,10 @@ class PlayerActivity : AppCompatActivity() {
         // 手机没有菜单键，用底部控制栏的「菜单」按钮代替（TV 仍走 KEYCODE_MENU）
         btnMenu.setOnClickListener { toggleMenu() }
         if (!UiScale.isTv(this)) btnMenu.visibility = View.VISIBLE
+        // TV：顶栏右上角再给一个菜单入口。部分遥控器没有菜单键，这里用遥控器指针
+        // 或触摸可直接点开，不必依赖 KEYCODE_MENU。
+        btnMenuTop.setOnClickListener { toggleMenu() }
+        if (UiScale.isTv(this)) btnMenuTop.visibility = View.VISIBLE
 
         epBtnClose.setOnClickListener { closeEpisodePicker() }
         epBtnJump.setOnClickListener { showJumpDialog() }
@@ -2114,6 +2136,8 @@ class PlayerActivity : AppCompatActivity() {
     private fun showControls() {
         topBar.visibility = View.VISIBLE
         controlBar.visibility = View.VISIBLE
+        // 顶栏时钟：显示边栏时对齐一次，避免停在上一分钟
+        clockTick.run()
         updateProgressText()
         // 播放中的调用（如快进提示）不应让边栏长驻：仍挂自动隐藏。
         if (player?.isPlaying == true) {
@@ -2668,6 +2692,8 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 顶栏时钟：回前台恢复整分刷新
+        clockTick.run()
         val p = player ?: return
         // 切集准备期被切到后台：不做 seek/续播，等新集 STATE_READY 后自然起播
         if (switchingEpisode) return
@@ -2686,6 +2712,8 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        // 离开页面停表，避免后台空转
+        handler.removeCallbacks(clockTick)
         // 退出/切走前把进度落盘（onDestroy 不保证一定执行）
         recordHistory(force = true)
     }

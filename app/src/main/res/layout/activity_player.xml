@@ -80,7 +80,10 @@
         android:layout_gravity="top"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:padding="20dp"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp"
         android:background="@color/scrim"
         android:visibility="gone">
 
@@ -93,6 +96,36 @@
             android:textSize="15sp"
             android:maxLines="1"
             android:ellipsize="end" />
+
+        <!-- 当前时间：TV 全屏沉浸式下没有系统状态栏，暂停/操作时顶部显示时钟 -->
+        <TextView
+            android:id="@+id/clock_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="14dp"
+            android:fontFamily="monospace"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:letterSpacing="0.06"
+            android:includeFontPadding="false" />
+
+        <!-- TV 右上角菜单入口：遥控器没有菜单键时可直接点这里 -->
+        <TextView
+            android:id="@+id/btn_menu_top"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:gravity="center"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:background="@drawable/button_bg"
+            android:text="@string/menu_open"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp"
+            android:clickable="true"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:visibility="gone" />
     </LinearLayout>
 
     <!-- 快进/快退/切集 提示（居中，短暂显示） -->
