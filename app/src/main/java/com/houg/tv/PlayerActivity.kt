@@ -28,6 +28,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.C
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.lifecycle.Lifecycle
@@ -495,6 +496,37 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    /** 上次记录丢帧日志的时间：进度回调很密集，限流避免日志被刷爆。 */
+    private var lastDropLogAt = 0L
+
+    /**
+     * 帧率/解码诊断：记录实际启用的解码器与会话内丢帧。
+     * 「感觉帧数不高」时先看这两条——解码器是硬解还是 c2.android 软解、有没有持续丢帧。
+     */
+    private val frameAnalytics = object : AnalyticsListener {
+        override fun onVideoDecoderInitialized(
+            eventTime: AnalyticsListener.EventTime,
+            decoderName: String,
+            initializedTimestampMs: Long,
+            initializationDurationMs: Long
+        ) {
+            AppLog.d("PlayerActivity", "视频解码器=" + decoderName
+                    + " 初始化耗时=" + initializationDurationMs + "ms")
+        }
+
+        override fun onDroppedVideoFrames(
+            eventTime: AnalyticsListener.EventTime,
+            droppedFrames: Int,
+            elapsedMs: Long
+        ) {
+            val now = System.currentTimeMillis()
+            if (now - lastDropLogAt < 5000L) return
+            lastDropLogAt = now
+            AppLog.d("PlayerActivity", "丢帧 dropped=" + droppedFrames
+                    + " elapsed=" + elapsedMs + "ms")
+        }
+    }
+
     /** 是否解码器类失败（初始化/查询/解码），可由「切软解」尝试救回。 */
     private fun isDecodeFailure(error: PlaybackException): Boolean {
         return when (error.errorCode) {
@@ -650,6 +682,7 @@ class PlayerActivity : AppCompatActivity() {
             AppLog.d("PlayerActivity", "setWakeMode 失败: " + (e.message ?: ""))
         }
         player!!.addListener(playerListener)
+        player!!.addAnalyticsListener(frameAnalytics)
 
         updateAspectLabel()
         updateRotateLabel()
@@ -1374,6 +1407,10 @@ class PlayerActivity : AppCompatActivity() {
         val builder = ExoPlayer.Builder(this)
             // 内容源工厂：本地缓存走 FileDataSource，明文片源走 OkHttp 边下边播
             .setMediaSourceFactory(DefaultMediaSourceFactory(HgDataSourceFactory()))
+            // 帧率适配：让显示刷新率跟随片源帧率（24/25/30fps），减少 60Hz 面板上的
+            // 3:2 抖动感（观感就是「帧数不高」）。只在不引起闪屏的无缝模式下才切，
+            // 老设备/不支持的系统会自动忽略，不会黑屏或闪 HDMI。
+            .setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_ONLY_IF_SEAMLESS)
         if (decoderSoft) {
             builder.setRenderersFactory(SoftwareRenderersFactory(this))
         } else {
@@ -1476,6 +1513,7 @@ class PlayerActivity : AppCompatActivity() {
         player!!.setAudioAttributes(AudioAttributes.DEFAULT, /*handleAudioFocus=*/true)
         try { player!!.setWakeMode(C.WAKE_MODE_NETWORK) } catch (_: Exception) {}
         player!!.addListener(playerListener)
+        player!!.addAnalyticsListener(frameAnalytics)
         pendingResumeMs = resumeMs
         resumedThisEpisode = true
         AppLog.d("PlayerActivity", "重建播放器 decoderSoft=$decoderSoft resume=${resumeMs}ms")
