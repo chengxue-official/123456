@@ -38,37 +38,52 @@
             </intent-filter>
         </activity>
 
+        <!--
+          除首页外都声明 behind：继承栈内上一个页面的方向。
+          原来每个 Activity 都在 onCreate 里才 setRequestedOrientation，窗口先按设备
+          当前方向（手机竖屏）创建、随后才转成 TV 横屏，于是「每进一个页面都转一次屏」。
+          behind 让新页面一创建就沿用首页已经转好的横屏，代码里的 applyOrientation
+          仍会显式设置一次（同值即无操作），手机端也仍然是竖屏。
+        -->
         <activity
             android:name="com.houg.tv.SearchActivity"
+            android:screenOrientation="behind"
             android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
 
         <activity
             android:name="com.houg.tv.DetailActivity"
+            android:screenOrientation="behind"
             android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
 
         <activity
             android:name="com.houg.tv.HistoryActivity"
+            android:screenOrientation="behind"
             android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
 
         <activity
             android:name="com.houg.tv.RankActivity"
+            android:screenOrientation="behind"
             android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
 
         <activity
             android:name="com.houg.tv.CategoryActivity"
+            android:screenOrientation="behind"
             android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
 
         <activity
             android:name="com.houg.tv.PlayerActivity"
             android:theme="@style/AppTheme.Fullscreen"
+            android:screenOrientation="behind"
             android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
 
         <activity
             android:name="com.houg.tv.SettingsActivity"
+            android:screenOrientation="behind"
             android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
 
         <activity
             android:name="com.houg.tv.LogActivity"
+            android:screenOrientation="behind"
             android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
 
         <provider
