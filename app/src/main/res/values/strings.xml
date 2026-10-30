@@ -8,6 +8,7 @@
     <string name="nav_log">日志</string>
     <string name="nav_update">检查更新</string>
     <string name="nav_category">分类</string>
+    <string name="nav_recommend">推荐</string>
 
     <!-- 分类 -->
     <string name="category_title">分类</string>
@@ -60,9 +61,9 @@
 
     <!-- 首页（HOUG CINEMA：mast 品牌 + Hero + 区块 + 底部 dock） -->
     <string name="home_headline">今日主打</string>
-    <string name="home_side_title">推荐</string>
-    <string name="home_side_refresh">换一批</string>
-    <string name="home_side_failed">推荐加载失败，点「换一批」重试</string>
+    <string name="home_recommend_title">推荐</string>
+    <string name="home_recommend_hint">按红果热度 · 再点「推荐」换一批</string>
+    <string name="home_recommend_failed">推荐加载失败，点「推荐」重试</string>
     <string name="home_play">立即播放</string>
     <string name="home_join_list">加入影单</string>
     <string name="section_continue">继续观看</string>
