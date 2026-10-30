@@ -15,6 +15,7 @@ import android.widget.EditText
 import androidx.core.view.doOnLayout
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.houg.tv.util.AppLog
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -126,11 +127,6 @@ object UiScale {
     /** 网格卡片间距（TV 14dp；手机 12dp） */
     fun gapPx(context: Context): Int = px(context, R.dimen.grid_gap, R.dimen.grid_gap_tv)
 
-    /** 字号增益系数（TV 1.05 / 手机 1.0，再乘用户自定义字号系数） */
-    fun fontBoost(context: Context): Float =
-        context.resources.getFloat(if (isTv(context)) R.dimen.font_boost_tv else R.dimen.font_boost) *
-            userFontBoost(context)
-
     /** 用户自定义字号系数（设置页「字体大小」；默认 1.0） */
     fun userFontBoost(context: Context): Float =
         context.applicationContext
@@ -169,38 +165,41 @@ object UiScale {
      * 在 Activity.attachBaseContext 里包一层：覆盖 density 与字号。
      * 手机/TV 的安全边距、网格间距差异不在 warp 里做（AppCompat 会剥 uiMode，
      * 无法靠 values-television 限定符），由 pageH/gapPx 等代码侧选值。
+     *
+     * 字号走 Configuration.fontScale，而不是改 displayMetrics.scaledDensity：
+     * 后者在 AppCompat/资源更新重建 DisplayMetrics 时会被系统值覆盖，表现为
+     * 设置页「字体大小」改了没有任何效果（面子工程）。fontScale 属于配置本身，
+     * 由系统据此重新算出 scaledDensity，TTF 之外的尺寸（sp）全部生效。
      */
     fun warp(base: Context): Context {
-        // 手机竖屏刷短剧：直接沿用系统 density（如 411×914dp）。
-        // 1280×720 画布公式是横屏 16:9 假设，竖屏 1080×2400 下
-        // min(1080/1280, 2400/720)=0.84 会得到 1280dp 宽的离谱画布（主界面算成 8 列）。
-        // 但设置页「字体大小」需要在这里生效：只有用户改过字号（系数 ≠ 1）才包一层，
-        // 未改动的用户仍拿到原始 Context，行为与旧版完全一致。
-        if (!isTv(base)) {
-            val boost = userFontBoost(base)
-            if (boost == 1f) return base
-            val cfg = Configuration(base.resources.configuration)
-            val ctx = base.createConfigurationContext(cfg)
-            ctx.resources.displayMetrics.scaledDensity =
-                ctx.resources.displayMetrics.density * cfg.fontScale * boost
-            return ctx
-        }
-        val cfg = Configuration(base.resources.configuration)
+        // 手机竖屏刷短剧：没改过字号就直接用系统 Context，行为与旧版完全一致
+        val boost = userFontBoost(base)
+        val tv = isTv(base)
+        if (!tv && boost == 1f) return base
+
         val dm = base.resources.displayMetrics
-        // k 只由物理分辨率决定：长边对 BASE_W、短边对 BASE_H，与 attach 时的窗口方向无关。
-        // attachBaseContext 先于 applyOrientation 执行（窗口还带着原方向），若按当前窗口
-        // 宽高算 k，竖屏 attach（手机上手动切 TV / 后门触发）会算出 0.84 的错误密度，
-        // 且 manifest 声明 configChanges 不重建，转横屏后 density 永不重算 → 整个 TV UI 缩水。
-        val longPx = max(dm.widthPixels, dm.heightPixels).toFloat()
-        val shortPx = min(dm.widthPixels, dm.heightPixels).toFloat()
-        val k = min(longPx / BASE_W, shortPx / BASE_H)
-        if (k > 0f) {
-            cfg.densityDpi = (160f * k).roundToInt().coerceIn(120, 640)
+        val cfg = Configuration(base.resources.configuration)
+        if (tv) {
+            // k 只由物理分辨率决定：长边对 BASE_W、短边对 BASE_H，与 attach 时的窗口方向无关。
+            // attachBaseContext 先于 applyOrientation 执行（窗口还带着原方向），若按当前窗口
+            // 宽高算 k，竖屏 attach（手机上手动切 TV / 后门触发）会算出 0.84 的错误密度，
+            // 且 manifest 声明 configChanges 不重建，转横屏后 density 永不重算 → 整个 TV UI 缩水。
+            val longPx = max(dm.widthPixels, dm.heightPixels).toFloat()
+            val shortPx = min(dm.widthPixels, dm.heightPixels).toFloat()
+            val k = min(longPx / BASE_W, shortPx / BASE_H)
+            if (k > 0f) {
+                cfg.densityDpi = (160f * k).roundToInt().coerceIn(120, 640)
+            }
         }
+        // 字号：系统字体缩放 × TV 增益 × 用户档位
+        val tvGain = if (tv) base.resources.getFloat(R.dimen.font_boost_tv) else 1f
+        cfg.fontScale = cfg.fontScale * tvGain * boost
         val ctx = base.createConfigurationContext(cfg)
-        // 字号：density × 系统字体缩放 × TV 增益（fontBoost 按 isTv 选值）
-        ctx.resources.displayMetrics.scaledDensity =
-            ctx.resources.displayMetrics.density * cfg.fontScale * fontBoost(ctx)
+        AppLog.d(
+            "UiScale", "warp tv=" + tv + " userFont=" + boost + " fontScale=" + cfg.fontScale
+                    + " densityDpi=" + cfg.densityDpi
+                    + " scaledDensity=" + ctx.resources.displayMetrics.scaledDensity
+        )
         return ctx
     }
 

@@ -71,6 +71,8 @@ class MainActivity : AppCompatActivity() {
     /** 设置页「字体大小 / 封面大小」的当前值：用于回首页时判断是否需要重建 */
     private var fontScaleApplied = 0f
     private var coverScaleApplied = 0f
+    /** 创建时的 UI 形态（auto/tv/phone）：设置页切换后回首页要按新形态重建 */
+    private var uiModeApplied = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,9 +86,10 @@ class MainActivity : AppCompatActivity() {
         recycler = findViewById(R.id.recycler)
         clockText = findViewById(R.id.clock_text)
 
-        // 记录本次创建时的字号/封面系数（onResume 据此判断设置页是否改过）
+        // 记录本次创建时的字号/封面系数与 UI 形态（onResume 据此判断设置页是否改过）
         fontScaleApplied = UiScale.userFontBoost(this)
         coverScaleApplied = UiScale.userCoverScale(this)
+        uiModeApplied = UiScale.uiMode(this)
 
         applyPageInsets()
 
@@ -364,13 +367,15 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         UiScale.applyImmersive(this)
-        // 设置页改了字体/封面大小：字号必须重建 Resources 才生效，封面列数同理，
-        // 直接重建本页（onCreate 会重新读取新系数，不会二次触发）。
+        // 设置页改了字体/封面大小/UI 形态：都必须重建 Activity 才生效（字号走
+        // attachBaseContext 的 Configuration，形态影响整套布局与边距），直接重建本页。
         val font = UiScale.userFontBoost(this)
         val cover = UiScale.userCoverScale(this)
-        if (font != fontScaleApplied || cover != coverScaleApplied) {
+        val mode = UiScale.uiMode(this)
+        if (font != fontScaleApplied || cover != coverScaleApplied || mode != uiModeApplied) {
             fontScaleApplied = font
             coverScaleApplied = cover
+            uiModeApplied = mode
             recreate()
             return
         }
