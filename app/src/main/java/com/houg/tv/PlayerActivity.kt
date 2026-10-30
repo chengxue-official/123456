@@ -28,6 +28,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.C
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.lifecycle.Lifecycle
 import com.houg.tv.net.HttpClientProvider
@@ -35,6 +36,7 @@ import com.houg.tv.net.NetClient
 import com.houg.tv.playback.CencMp4Downloader
 import com.houg.tv.playback.CencMp4Parser
 import com.houg.tv.playback.CencMp4Remuxer
+import com.houg.tv.playback.HgDataSourceFactory
 import com.houg.tv.sign.DeviceRegister
 import com.houg.tv.util.AppLog
 import com.houg.tv.util.DeviceInfo
@@ -150,6 +152,22 @@ class PlayerActivity : AppCompatActivity() {
     private var switchingEpisode = false
     /** 本集起播是否已失败（解码/网络）。失败时上下键仍可切走，但不再自动跳集。 */
     private var currentEpisodeFailed = false
+    /**
+     * 当前集是否在用「边下边播」（明文片源直连 CDN）。
+     * 为 true 时本地预加载要让出带宽，否则下一集的后台下载会把当前流播拖到缓冲。
+     */
+    private var streamingCurrent = false
+    /**
+     * 本集的边下边播是否已成功进入 STATE_READY。
+     * 只有「还没播起来」的失败才回退整集下载；播到一半断流回退会从头重播，
+     * 反而破坏观看进度，交给既有错误处理。
+     */
+    private var streamReady = false
+    /**
+     * 已从「边下边播」回退到「整集下载」的 vid#档位标记。
+     * 同一集同一档位只回退一次，避免 CDN 不支持直连时反复失败重试。
+     */
+    private val streamFallbackKeys = HashSet<String>()
     /**
      * 因「本地缓存文件损坏」已自动删档重下过的 vid。
      * 每个 vid 只自愈一次，避免文件反复下坏时陷入「下载→失败→再下载」死循环。
@@ -287,6 +305,8 @@ class PlayerActivity : AppCompatActivity() {
                 // 解码器初始化期的 STATE_ENDED 会在那之后才投递过来，抑制窗口太短会漏。
                 Player.STATE_READY -> {
                     releaseSwitchGuard()
+                    // 流播已成功打开：之后即使断流也不再自动回退下载（回退会从头重播）
+                    streamReady = true
                     // 解码就绪：转圈可以收了（首帧通常紧随其后；这里兜住个别
                     // 机型首帧回调缺失的情况，避免转圈盖在画面上）
                     hideLoading()
@@ -358,6 +378,25 @@ class PlayerActivity : AppCompatActivity() {
             // 用户按上下键切集将被永久拦截（只有退出播放页才能恢复）。
             currentEpisodeFailed = true
             releaseSwitchGuard()
+
+            // ===== 边下边播回退：流播阶段出错就改走「整集下载 + 本地解密」 =====
+            // 典型场景：CDN 不支持 Range、直连 403、首帧前断流。同一集同一档位
+            // 只回退一次，之后固定走下载模式，避免「流播失败 → 下载 → 再失败」死循环。
+            // 解码类错误不在此处理：交给下面既有的解码自愈链（换编码 / 切软解）。
+            if (streamingCurrent && !streamReady && !isDecodeFailure(error)) {
+                streamingCurrent = false
+                val vid = vidList.getOrNull(currentPos)
+                if (vid != null) {
+                    val key = vid + "#" + cacheTag()
+                    if (streamFallbackKeys.add(key)) {
+                        AppLog.d("PlayerActivity", "边下边播失败(" + error.errorCodeName
+                                + ")，回退整集下载 vid=" + vid)
+                        currentEpisodeFailed = false
+                        playCurrent()
+                        return
+                    }
+                }
+            }
 
             // ===== 错误分类：I/O 类不是解码问题，别误导用户换设备 =====
             // 线上反馈：VIDAA_TV 报「当前设备可能不支持 H.265 解码
@@ -750,6 +789,8 @@ class PlayerActivity : AppCompatActivity() {
         // 起播前清掉上一集的失败标记
         currentEpisodeFailed = false
         retryLimited429 = false
+        streamingCurrent = false
+        streamReady = false
 
         // 切集时取消在途的预加载任务：它下载的是「按旧的下一集算出的目标」，
         // 继续跑只会白抢带宽（且可能与本集写出同一个文件）。
@@ -791,7 +832,8 @@ class PlayerActivity : AppCompatActivity() {
                     AppLog.d("PlayerActivity", "命中预加载缓存 vid=$vid")
                     withContext(Dispatchers.IO) { parseTkhd(cached) }
                     if (gen != playGen) return@launch
-                    startPlayback(cached)
+                    streamingCurrent = false
+                    startPlayback(Uri.fromFile(cached))
                     return@launch
                 }
                 val video = withContext(Dispatchers.IO) {
@@ -809,9 +851,20 @@ class PlayerActivity : AppCompatActivity() {
                 AppLog.d("PlayerActivity", "【检验环节2】取流 vid=$vid 上限=" + maxVariantHeight()
                         + "P 可用档=" + availableHeights.sortedDescending().joinToString("/") + "P"
                         + " 选中=" + video.height + "P codec=" + video.codec)
+                // 明文片源：直接边下边播，起播只等首帧（不再等整集下载完）
+                val streamUrl = streamUrlFor(video, vid)
+                if (streamUrl != null) {
+                    if (gen != playGen) return@launch
+                    streamingCurrent = true
+                    AppLog.d("PlayerActivity", "边下边播 vid=$vid 档位=" + video.height
+                            + "P host=" + Uri.parse(streamUrl).host)
+                    startPlayback(Uri.parse(streamUrl))
+                    return@launch
+                }
                 val clearFile = withContext(Dispatchers.IO) { prepareClearFile(video) }
                 if (gen != playGen) return@launch
-                startPlayback(clearFile)
+                streamingCurrent = false
+                startPlayback(Uri.fromFile(clearFile))
             } catch (e: Throwable) {
                 // ⚠️ 必须 catch Throwable 而非 Exception：1.8GB 内存的老设备上
                 // remux 瞬时占用可达 ~80MB，触发 OutOfMemoryError（属 Error 不属
@@ -892,6 +945,23 @@ class PlayerActivity : AppCompatActivity() {
         } catch (e: Exception) {
             null
         }
+    }
+
+    /**
+     * 可边下边播的地址：只有明文变体能直连 CDN。
+     * 加密片源必须本地逐样本解密，直连拿到的仍是密文，只能走整集下载。
+     * 同一集同一档位若已回退过（[streamFallbackKeys]），返回 null 强制走下载模式。
+     */
+    private fun streamUrlFor(video: NetClient.VideoModel, vid: String): String? {
+        if (streamFallbackKeys.contains(vid + "#" + cacheTag())) return null
+        val top = video.variants.firstOrNull()
+        if (top != null) {
+            if (top.encrypted) return null
+            return top.urls.firstOrNull { it.startsWith("http") }
+        }
+        // 兼容旧结构：没有变体列表时看顶层字段
+        if (video.encrypted) return null
+        return video.urls.firstOrNull { it.startsWith("http") }
     }
 
     /**
@@ -1055,7 +1125,11 @@ class PlayerActivity : AppCompatActivity() {
         else -> fourcc
     }
 
-    private fun startPlayback(file: File) {
+    /**
+     * 交给播放器一个内容源：本地明文缓存文件（file://）或 CDN 直连（http/https）。
+     * 直连即「边下边播」，由 [HgDataSourceFactory] 提供带签名头的流式数据源。
+     */
+    private fun startPlayback(source: Uri) {
         val p = player
         if (p == null) {
             // Activity 已销毁：解除抑制并按失败处理，避免标记泄漏
@@ -1064,7 +1138,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         // 播放器上挂的内容已是本集（此后 recordHistory 才会写本集进度）
         loadedPos = currentPos
-        p.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+        p.setMediaItem(MediaItem.fromUri(source))
         p.prepare()
         applySpeed()
 
@@ -1298,6 +1372,8 @@ class PlayerActivity : AppCompatActivity() {
         AppLog.d("PlayerActivity", "【检验环节3】创建播放器 模式="
                 + if (decoderSoft) "软解" else "硬解(解码器回退已开)")
         val builder = ExoPlayer.Builder(this)
+            // 内容源工厂：本地缓存走 FileDataSource，明文片源走 OkHttp 边下边播
+            .setMediaSourceFactory(DefaultMediaSourceFactory(HgDataSourceFactory()))
         if (decoderSoft) {
             builder.setRenderersFactory(SoftwareRenderersFactory(this))
         } else {
@@ -1490,6 +1566,9 @@ class PlayerActivity : AppCompatActivity() {
      */
     private fun prefetchNext() {
         if (prefetchRunning) return
+        // 当前集在边下边播：预加载下一集会抢同一根带宽，把正在播的流拖到缓冲。
+        // 流播起播本身只要一两秒，预加载收益不值得这个代价。
+        if (streamingCurrent) return
         // 媒体 CDN 限流冷却中：不发起任何预加载，等窗口过去
         if (System.currentTimeMillis() < mediaCooldownUntil) return
         if (mediaCooldownActive) {
