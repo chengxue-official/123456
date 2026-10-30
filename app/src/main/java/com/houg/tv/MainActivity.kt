@@ -8,6 +8,8 @@ import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -15,6 +17,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.Glide
 import com.houg.tv.net.NetClient
 import com.houg.tv.update.UpdateDialog
 import kotlinx.coroutines.CoroutineScope
@@ -45,6 +48,18 @@ class MainActivity : AppCompatActivity() {
     private lateinit var recycler: RecyclerView
     private lateinit var progress: View
     private lateinit var statusText: TextView
+
+    /* ==================== 右侧推荐栏 ==================== */
+
+    private lateinit var sideRail: View
+    private lateinit var sideList: LinearLayout
+    private lateinit var sideHeader: View
+    /** 下一批推荐的榜单页码（1 起；最后一页后回到第 1 页） */
+    private var sidePage = 1
+    /** 推荐请求在途：防止连点「换一批」重复请求 */
+    private var sideLoading = false
+    /** 推荐栏一次展示条数（TV 右侧一屏放得下） */
+    private val SIDE_COUNT = 8
 
     /* ==================== 首页时钟 ==================== */
 
@@ -109,6 +124,7 @@ class MainActivity : AppCompatActivity() {
 
         setupMast()
         setupDock()
+        setupSideRail()
 
         if (recEnabled(SettingsActivity.REC_CONTINUE)) {
             adapter.setContinue(App.watchHistory.list().take(3))
@@ -129,7 +145,8 @@ class MainActivity : AppCompatActivity() {
         if (UiScale.isTv(this)) {
             // dock 已移到 mast 下方（顶部），底部不再需要留 overscan 边；
             // 改为给内容流垫底，避免 TV overscan 裁掉最后一行卡片。
-            recycler.setPadding(h, 0, h, UiScale.pageTop(this))
+            // 右侧有推荐栏：页面级 64dp 安全边由侧栏内边距承担，内容区只留栏间距。
+            recycler.setPadding(h, 0, dp(16), UiScale.pageTop(this))
         } else {
             recycler.setPadding(h, 0, h, 0)
             // 原型 body.m：手机 mast 只留品牌 + 搜索，避免交流群文案把按钮挤出屏
@@ -269,6 +286,78 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    /* ==================== 右侧推荐栏 ==================== */
+
+    /**
+     * 首页右侧推荐栏：按红果热度（热播榜）取前 [SIDE_COUNT] 条。
+     * 点顶部「换一批」翻下一名单页重新拉一批；点条目直接进详情。
+     * 手机竖屏宽度不够，整栏隐藏（只有电视有侧栏空间）。
+     */
+    private fun setupSideRail() {
+        sideRail = findViewById(R.id.side_rail)
+        sideList = findViewById(R.id.side_list)
+        sideHeader = findViewById(R.id.side_header)
+        if (!UiScale.isTv(this)) {
+            sideRail.visibility = View.GONE
+            return
+        }
+        // TV 右侧 overscan 安全区：栏内右侧留出与页面一致的 64dp
+        sideRail.setPadding(dp(12), 0, UiScale.pageH(this), 0)
+        attachFocusScale(sideHeader)
+        sideHeader.setOnClickListener { loadSide() }
+        loadSide()
+    }
+
+    /** 拉一批热度推荐并渲染；失败时保留上一批，仅首次失败给一次提示。 */
+    private fun loadSide() {
+        if (sideLoading) return
+        sideLoading = true
+        val page = sidePage
+        scope.launch {
+            try {
+                val rankPage = withContext(Dispatchers.IO) {
+                    App.netClient.ranking(NetClient.RANK_BOARDS[0], page)
+                }
+                renderSide(rankPage.items.take(SIDE_COUNT))
+                sidePage = if (rankPage.hasMore) rankPage.page + 1 else 1
+            } catch (e: Exception) {
+                if (sideList.childCount == 0) {
+                    Toast.makeText(
+                        this@MainActivity, R.string.home_side_failed, Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } finally {
+                sideLoading = false
+            }
+        }
+    }
+
+    private fun renderSide(items: List<NetClient.RankItem>) {
+        sideList.removeAllViews()
+        items.forEach { item ->
+            val row = layoutInflater.inflate(R.layout.item_home_side, sideList, false)
+            row.findViewById<TextView>(R.id.side_title).text = item.drama.title
+            row.findViewById<TextView>(R.id.side_heat).text =
+                if (item.heat.isNotEmpty()) "TOP" + item.rank + " · " + item.heat
+                else "TOP" + item.rank
+            val cover = row.findViewById<ImageView>(R.id.side_cover)
+            if (item.drama.cover.isNotEmpty()) {
+                Glide.with(this)
+                    .load(item.drama.cover)
+                    .placeholder(android.R.color.darker_gray)
+                    .error(android.R.color.darker_gray)
+                    .into(cover)
+            } else {
+                cover.setImageResource(android.R.color.darker_gray)
+            }
+            row.setOnClickListener { openDetail(item.drama) }
+            attachFocusScale(row)
+            sideList.addView(row)
+        }
+    }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
 
     /* ==================== 数据 ==================== */
 
