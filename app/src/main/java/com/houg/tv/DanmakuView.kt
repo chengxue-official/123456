@@ -9,6 +9,7 @@ import android.util.TypedValue
 import android.view.View
 import com.houg.tv.net.NetClient
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * 滚动弹幕 View：从屏幕右缘外侧完整滑到左缘外侧，多轨道自动排布。
@@ -47,8 +48,14 @@ class DanmakuView @JvmOverloads constructor(
 
     /** 走完整个屏幕宽度（不含文字自身宽度）所需的墙钟时间 */
     private val screenTravelWallMs = 8000L
-    /** 轨道数量（弹幕区占画面高度 55%，1080p 下 6 条互不重叠） */
-    private val laneCount = 6
+    /**
+     * 弹幕区占画面高度的比例（默认 55%：1080p 下 6 条互不重叠）。
+     * 播放页菜单「弹幕区域」可切 上部 35% / 中部 55% / 全屏 85%。
+     */
+    private var areaRatio = 0.55f
+    /** 轨道数随弹幕区高度同步缩放：区域越大能塞的行越多，观感密度保持一致 */
+    private val laneCount: Int
+        get() = (6f * (areaRatio / 0.55f)).roundToInt().coerceIn(2, 12)
 
     private val items = ArrayList<NetClient.DanmakuItem>()
     private val flying = ArrayList<Flying>()
@@ -180,6 +187,18 @@ class DanmakuView @JvmOverloads constructor(
         invalidate()
     }
 
+    /**
+     * 设置弹幕区占画面高度的比例（播放页菜单「弹幕区域」）。
+     * 区域变化后轨道数一并重算，在飞弹幕清掉重排，避免落到新区域之外。
+     */
+    fun setAreaRatio(ratio: Float) {
+        val r = ratio.coerceIn(0.2f, 0.9f)
+        if (r == areaRatio) return
+        areaRatio = r
+        flying.clear()
+        invalidate()
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val w = width
@@ -191,7 +210,7 @@ class DanmakuView @JvmOverloads constructor(
         spawnDue(pos, w)
         removeFinished(pos)
 
-        val areaHeight = height * 0.55f
+        val areaHeight = height * areaRatio
         val fm = fillPaint.fontMetrics
         for (f in flying) {
             val elapsed = (pos - f.spawnPosMs).coerceAtLeast(0L)

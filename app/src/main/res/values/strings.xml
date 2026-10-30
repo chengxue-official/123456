@@ -123,6 +123,10 @@
     <string name="danmaku_scale_small">小</string>
     <string name="danmaku_scale_medium">中</string>
     <string name="danmaku_scale_large">大</string>
+    <string name="menu_danmaku_area">弹幕区域</string>
+    <string name="danmaku_area_top">上部</string>
+    <string name="danmaku_area_middle">中部</string>
+    <string name="danmaku_area_full">全屏</string>
     <string name="menu_speed">倍速</string>
     <string name="menu_decoder">解码</string>
     <string name="menu_decoder_hard">硬解</string>
