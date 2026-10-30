@@ -30,3 +30,6 @@ docs/qa/
 update.json
 build.bat
 release.bat
+
+# 构建/交付用的 APK 不入库（发布包只走 hongguoA 热更新仓）
+*.apk
