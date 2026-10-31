@@ -29,7 +29,10 @@ import androidx.media3.common.C
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.drm.DefaultDrmSessionManager
+import androidx.media3.exoplayer.drm.FrameworkMediaDrm
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.lifecycle.Lifecycle
 import com.houg.tv.net.HttpClientProvider
@@ -37,6 +40,7 @@ import com.houg.tv.net.NetClient
 import com.houg.tv.playback.CencMp4Downloader
 import com.houg.tv.playback.CencMp4Parser
 import com.houg.tv.playback.CencMp4Remuxer
+import com.houg.tv.playback.ClearKeyDrmCallback
 import com.houg.tv.playback.HgDataSourceFactory
 import com.houg.tv.sign.DeviceRegister
 import com.houg.tv.util.AppLog
@@ -171,6 +175,14 @@ class PlayerActivity : AppCompatActivity() {
      * 同一集同一档位只回退一次，避免 CDN 不支持直连时反复失败重试。
      */
     private val streamFallbackKeys = HashSet<String>()
+    /**
+     * 本集是否为「加密源直连流播」（ClearKey + MediaDrm）。
+     * 为 true 时 MediaItem 带 DRM 配置；任一 DRM/解码环节失败都由 onPlayerError
+     * 回退到「整集下载 + 本地解密」，回退链路与旧版完全一致。
+     */
+    private var streamEncrypted = false
+    /** 加密流播用的 CENC-AES-128 密钥（明文流 / 本地文件为 null）。 */
+    private var streamCencKey: ByteArray? = null
     /**
      * 因「本地缓存文件损坏」已自动删档重下过的 vid。
      * 每个 vid 只自愈一次，避免文件反复下坏时陷入「下载→失败→再下载」死循环。
@@ -411,7 +423,9 @@ class PlayerActivity : AppCompatActivity() {
             // 典型场景：CDN 不支持 Range、直连 403、首帧前断流。同一集同一档位
             // 只回退一次，之后固定走下载模式，避免「流播失败 → 下载 → 再失败」死循环。
             // 解码类错误不在此处理：交给下面既有的解码自愈链（换编码 / 切软解）。
-            if (streamingCurrent && !streamReady && !isDecodeFailure(error)) {
+            // 加密流播（ClearKey）例外：DRM 不兼容时也可能表现为解码失败，但必须回退
+            // 整集下载，绝不能走下面的「排 HEVC / 切软解」自愈链（那会误伤本机解码能力）。
+            if (streamingCurrent && !streamReady && (!isDecodeFailure(error) || streamEncrypted)) {
                 streamingCurrent = false
                 val vid = vidList.getOrNull(currentPos)
                 if (vid != null) {
@@ -911,6 +925,8 @@ class PlayerActivity : AppCompatActivity() {
                     withContext(Dispatchers.IO) { parseTkhd(cached) }
                     if (gen != playGen) return@launch
                     streamingCurrent = false
+                    streamEncrypted = false
+                    streamCencKey = null
                     startPlayback(Uri.fromFile(cached))
                     return@launch
                 }
@@ -942,11 +958,13 @@ class PlayerActivity : AppCompatActivity() {
                 val clearFile = withContext(Dispatchers.IO) { prepareClearFile(video) }
                 if (gen != playGen) return@launch
                 streamingCurrent = false
+                streamEncrypted = false
+                streamCencKey = null
                 startPlayback(Uri.fromFile(clearFile))
             } catch (e: Throwable) {
-                // ⚠️ 必须 catch Throwable 而非 Exception：1.8GB 内存的老设备上
-                // remux 瞬时占用可达 ~80MB，触发 OutOfMemoryError（属 Error 不属
-                // Exception）。此前漏接导致整个协程崩掉、播放页异常退出。
+                // ⚠️ 必须 catch Throwable 而非 Exception：内存紧张时解密/解码链路
+                // 可能抛 OutOfMemoryError（属 Error 不属 Exception）。此前漏接导致
+                // 整个协程崩掉、播放页异常退出。
                 if (gen != playGen) return@launch
                 AppLog.e("PlayerActivity", "起播失败 vid=$vid", e)
                 hideLoading()
@@ -971,8 +989,14 @@ class PlayerActivity : AppCompatActivity() {
                 // BUG-114：身份被拒（自动换身份+网页兜底都失败）时给出「重试」按钮，
                 // 实际是换新设备身份后重播——用户不需要摸到日志页去按。
                 showError(
-                        if (limited) "服务器繁忙，请稍后重试"
-                        else (e.message ?: getString(R.string.load_failed)),
+                        when {
+                            limited -> "服务器繁忙，请稍后重试"
+                            // 内存不足：不再把英文异常甩给用户（旧版线上出现
+                            // “Failed to allocate a 27994450 byte allocation”）。
+                            // 解密已改流式，这里主要兜软解/系统整体内存紧张。
+                            isMemoryError(e) -> "设备内存不足，播放失败。请清理后台应用后重试，或切换到较低清晰度"
+                            else -> e.message ?: getString(R.string.load_failed)
+                        },
                         canRetry = limited || e.message == NetClient.DEVICE_IDENTITY_FAILED_MSG)
             }
         }
@@ -1026,19 +1050,31 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     /**
-     * 可边下边播的地址：只有明文变体能直连 CDN。
-     * 加密片源必须本地逐样本解密，直连拿到的仍是密文，只能走整集下载。
-     * 同一集同一档位若已回退过（[streamFallbackKeys]），返回 null 强制走下载模式。
+     * 可边下边播的地址：明文变体直连 CDN；加密变体也先尝试直连（ClearKey +
+     * MediaDrm 流播，密钥随 [streamCencKey] 交给播放器）——整集下载+本地解密
+     * 起播要等全片，流播只等首帧。任一环节失败（DRM 不兼容、CDN 拒直连、
+     * 解码异常）由 onPlayerError 回退下载模式：同一集同一档位已回退过
+     * （[streamFallbackKeys]）时返回 null 强制走下载模式。
      */
     private fun streamUrlFor(video: NetClient.VideoModel, vid: String): String? {
         if (streamFallbackKeys.contains(vid + "#" + cacheTag())) return null
+        streamEncrypted = false
+        streamCencKey = null
         val top = video.variants.firstOrNull()
         if (top != null) {
-            if (top.encrypted) return null
+            if (top.encrypted) {
+                if (top.cencKey == null) return null // 无密钥的加密变体流播不了，直接走下载
+                streamEncrypted = true
+                streamCencKey = top.cencKey
+            }
             return top.urls.firstOrNull { it.startsWith("http") }
         }
         // 兼容旧结构：没有变体列表时看顶层字段
-        if (video.encrypted) return null
+        if (video.encrypted) {
+            if (video.cencKey == null) return null
+            streamEncrypted = true
+            streamCencKey = video.cencKey
+        }
         return video.urls.firstOrNull { it.startsWith("http") }
     }
 
@@ -1060,9 +1096,42 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 流式下载 + 解密去封装：下载直接落盘（[CencMp4Downloader.downloadToFileWithRetry]），
+     * 加密变体再逐样本解密重封装到 [out]（[CencMp4Remuxer.remuxToFile]）。
+     *
+     * 为什么必须流式：旧实现把整集（~28MB）读进 byte[]、重封装再分配一份等大数组，
+     * 峰值 ≈ 2×文件大小，老电视/32 位进程直接 OOM（线上
+     * `Failed to allocate a 27994450 byte allocation`）。现在峰值内存 = 最大单样本
+     * （几百 KB）+ 64KB 缓冲，与文件大小无关。
+     *
+     * @param key null = 明文变体（下载完成即成品）；非 null = 加密变体（需解密重封装）
+     * @return 明文 mp4 文件 [out]
+     */
+    private fun downloadAndPrepare(
+        urls: List<String>, key: ByteArray?, vid: String, out: File, budgetMs: Long
+    ): File {
+        val encFile = File(cacheDir, "enc_" + vid + "_" + cacheTag() + ".part")
+        try {
+            CencMp4Downloader(HttpClientProvider.get())
+                .downloadToFileWithRetry(urls, encFile, budgetMs)
+            if (key != null) {
+                CencMp4Remuxer.remuxToFile(encFile, out, key)
+            } else {
+                // 明文变体：下载件本身就是成品，直接改名成明文缓存
+                out.delete()
+                if (!encFile.renameTo(out)) {
+                    encFile.copyTo(out, overwrite = true)
+                }
+            }
+            return out
+        } finally {
+            encFile.delete()
+        }
+    }
+
     /** 下载 → 解密去封装（仅加密变体）→ 写本地明文 mp4，返回文件。运行在 IO 线程。 */
     private fun prepareClearFile(video: NetClient.VideoModel): File {
-        val downloader = CencMp4Downloader(HttpClientProvider.get())
         val variants = video.variants
         // R-01：起播总时间预算。变体逐个撞限流时最坏要转圈 5 分钟以上
         //（每变体退避约 22s × 3 个变体），用户只能干看着圈。预算内试完，
@@ -1086,31 +1155,24 @@ class PlayerActivity : AppCompatActivity() {
                 // 线上 MiTV-MFTR0 日志里三个变体全是 `encrypted=false`，
                 // 于是循环空转、必然抛「视频下载或解密失败」，用户完全看不了这一集。
                 // 正确做法：明文直下写盘（无需密钥），加密才走 remux 解密。
+                if (v.encrypted && v.cencKey == null) {
+                    // 保持「跳过但不污染 lastError」的旧语义：无密钥的变体不算
+                    // 可重试错误，不能覆盖前面真实撞到的 429（否则丢限流信号）。
+                    AppLog.d("PlayerActivity", "加密变体无密钥，跳过 codec=" + v.codec)
+                    continue
+                }
                 try {
                     val t0 = System.currentTimeMillis()
-                    val enc = downloader.downloadWithRetry(v.urls, remainingBudget())
-                    if (enc.isEmpty()) {
-                        AppLog.d("PlayerActivity", "变体下载为空，跳过 codec=" + v.codec
-                                + " height=" + v.height)
-                        continue
-                    }
-                    val clear = if (v.encrypted) {
-                        val key = v.cencKey
-                        if (key == null) {
-                            AppLog.d("PlayerActivity", "加密变体无密钥，跳过 codec=" + v.codec)
-                            continue
-                        }
-                        CencMp4Remuxer.remux(enc, key)
-                    } else {
-                        enc
-                    }
                     val file = clearFile(video.videoId)
-                    file.writeBytes(clear)
+                    downloadAndPrepare(
+                        v.urls,
+                        if (v.encrypted) v.cencKey else null,
+                        video.videoId, file, remainingBudget())
                     parseTkhd(file)
                     AppLog.d("PlayerActivity", "prepareClearFile codec=" + v.codec
                             + " height=" + v.height + " encrypted=" + v.encrypted
-                            + " enc=" + enc.size
-                            + " clear=" + clear.size + " 耗时(ms)=" + (System.currentTimeMillis() - t0)
+                            + " size=" + file.length()
+                            + " 耗时(ms)=" + (System.currentTimeMillis() - t0)
                             + " tkhd=" + tkhdWidth + "x" + tkhdHeight + " rot=" + tkhdRotation)
                     return file
                 } catch (e: Exception) {
@@ -1125,14 +1187,11 @@ class PlayerActivity : AppCompatActivity() {
         } else {
             // 向后兼容：variants 为空时退回 urls + cencKey
             try {
-                val enc = downloader.downloadWithRetry(video.urls, remainingBudget())
-                val clear = if (video.encrypted && video.cencKey != null) {
-                    CencMp4Remuxer.remux(enc, video.cencKey)
-                } else {
-                    enc
-                }
                 val file = clearFile(video.videoId)
-                file.writeBytes(clear)
+                downloadAndPrepare(
+                    video.urls,
+                    if (video.encrypted) video.cencKey else null,
+                    video.videoId, file, remainingBudget())
                 parseTkhd(file)
                 return file
             } catch (e: Exception) {
@@ -1142,6 +1201,20 @@ class PlayerActivity : AppCompatActivity() {
         }
         // 带上 cause：起播失败处理靠 cause 链里的「HTTP 429」判定媒体限流
         throw Exception("视频下载或解密失败", lastError)
+    }
+
+    /** 是否内存不足类失败：OutOfMemoryError，或 ART 报的分配失败异常。 */
+    private fun isMemoryError(e: Throwable): Boolean {
+        var cause: Throwable? = e
+        while (cause != null) {
+            if (cause is OutOfMemoryError) return true
+            val m = cause.message ?: ""
+            if (m.contains("Failed to allocate", ignoreCase = true)
+                || m.contains("OutOfMemory", ignoreCase = true)
+                || m.contains("out of memory", ignoreCase = true)) return true
+            cause = cause.cause
+        }
+        return false
     }
 
     /** 媒体下载异常是否属瞬态可重试（429/5xx/网络瞬断）；403/404 等永久错误不算。 */
@@ -1216,7 +1289,30 @@ class PlayerActivity : AppCompatActivity() {
         }
         // 播放器上挂的内容已是本集（此后 recordHistory 才会写本集进度）
         loadedPos = currentPos
-        p.setMediaItem(MediaItem.fromUri(source))
+        val cencKey = streamCencKey
+        if (streamingCurrent && streamEncrypted && cencKey != null) {
+            // 加密源直连流播：带上 ClearKey DRM 配置，由 MediaDrm 按 CENC 样本
+            // （senc/saiz/tenc）就地解密，起播只等首帧。
+            // 任一环节不兼容都会在 onPlayerError 里回退整集下载（见该处注释）。
+            val item = MediaItem.Builder()
+                .setUri(source)
+                .setDrmConfiguration(
+                    MediaItem.DrmConfiguration.Builder(C.CLEARKEY_UUID)
+                        .setForceSessionsForAudioAndVideoTracks(true)
+                        .build()
+                )
+                .build()
+            val mediaSource = ProgressiveMediaSource.Factory(HgDataSourceFactory())
+                .setDrmSessionManagerProvider {
+                    DefaultDrmSessionManager.Builder()
+                        .setUuidAndExoMediaDrmProvider(C.CLEARKEY_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
+                        .build(ClearKeyDrmCallback(cencKey))
+                }
+                .createMediaSource(item)
+            p.setMediaSource(mediaSource)
+        } else {
+            p.setMediaItem(MediaItem.fromUri(source))
+        }
         p.prepare()
         applySpeed()
 
@@ -1738,24 +1834,17 @@ class PlayerActivity : AppCompatActivity() {
                             App.netClient.videoModel(vid, maxVariantHeight())
                         }
                         withContext(Dispatchers.IO) {
-                            val downloader = CencMp4Downloader(
-                                    HttpClientProvider.get())
                             // ⚠️ 与 prepareClearFile 保持一致：明文变体（encrypted=false）
                             // 必须直下，旧代码 `if (!v.encrypted) continue` 会让全明文片源
                             // 一集都预加载不成功，切到该集时只能现场下载（转圈很久）。
                             if (video.variants.isNotEmpty()) {
                                 for (v in video.variants) {
+                                    if (v.encrypted && v.cencKey == null) continue
                                     try {
-                                        val enc = downloader.downloadWithRetry(v.urls)
-                                        if (enc.isEmpty()) continue
-                                        val clear = if (v.encrypted) {
-                                            val key = v.cencKey
-                                            if (key == null) continue
-                                            CencMp4Remuxer.remux(enc, key)
-                                        } else {
-                                            enc
-                                        }
-                                        clearFile(video.videoId).writeBytes(clear)
+                                        downloadAndPrepare(
+                                            v.urls,
+                                            if (v.encrypted) v.cencKey else null,
+                                            video.videoId, clearFile(video.videoId), 0L)
                                         ok = true
                                         break
                                     } catch (e: Exception) {
@@ -1774,16 +1863,11 @@ class PlayerActivity : AppCompatActivity() {
                             // urls[0] 越界（MiTV-MFTR0 日志：Index 0 out of bounds for length 0）
                             if (!ok && !rateLimited && video.urls.isNotEmpty()) {
                                 try {
-                                    val enc = downloader.downloadWithRetry(video.urls)
-                                    if (enc.isNotEmpty()) {
-                                        val clear = if (video.encrypted && video.cencKey != null) {
-                                            CencMp4Remuxer.remux(enc, video.cencKey)
-                                        } else {
-                                            enc
-                                        }
-                                        clearFile(video.videoId).writeBytes(clear)
-                                        ok = true
-                                    }
+                                    downloadAndPrepare(
+                                        video.urls,
+                                        if (video.encrypted) video.cencKey else null,
+                                        video.videoId, clearFile(video.videoId), 0L)
+                                    ok = true
                                 } catch (e: Exception) {
                                     AppLog.e("PlayerActivity", "预加载兜底失败", e)
                                     if (e.message?.contains("HTTP 429") == true) rateLimited = true

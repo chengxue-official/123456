@@ -3,6 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// 双 ABI 打包开关：-PabiTarget=32（默认）出 armeabi-v7a 包，-PabiTarget=64 出 arm64-v8a 包。
+// 两个包版本号相同、功能一致，仅原生库架构不同；发版时各打一次（见 release.ps1）。
+val abiTarget = (project.findProperty("abiTarget") as String?) ?: "32"
+
 android {
     namespace = "com.houg.tv"
     compileSdk = 35
@@ -14,11 +18,14 @@ android {
         // 适配 Android 5.0（API 21）及以上：HG片源为 HEVC+CENC，需 API 21 起的 HEVC 硬解能力
         minSdk = 21
         targetSdk = 35
-        versionCode = 137
-        versionName = "2.0.5"
-        // 32 位包：原生库只剩 libheifdecoder（封面 HEIC 解码），只打 armeabi-v7a。
-        // 老电视盒子/32 位系统可直接安装，64 位设备按 32 位模式运行。
-        ndk { abiFilters += listOf("armeabi-v7a") }
+        versionCode = 138
+        versionName = "2.0.6"
+        // 原生库只剩 libheifdecoder（封面 HEIC 解码）。32 位包只带 armeabi-v7a，
+        // 兼容老电视盒子；64 位包只带 arm64-v8a，供纯 64 位系统安装（部分新机型/
+        // 新电视已不支持 32 位应用）。由 abiTarget 属性在打包时选择。
+        ndk {
+            abiFilters += if (abiTarget == "64") listOf("arm64-v8a") else listOf("armeabi-v7a")
+        }
     }
 
     // 传统 View 体系，不使用 Compose

@@ -25,10 +25,17 @@ import java.io.File
  *   "apk": "h\u006fnggu\u006f-1.0.18.apk",
  *   "notes": "修复xxx",
  *   "sha256": "（非空则强校验）",
+ *   "apk64": "h\u006fnggu\u006f-1.0.18-arm64.apk",
+ *   "sha256_64": "64 位包的 SHA-256（非空则强校验）",
  *   "mirrors": ["https://其它源/update.json"],
  *   "logApi": "https://托管域名/api/log"
  * }
  * ```
+ *
+ * 双包分发：每次发版同时产出 32 位（armeabi-v7a）与 64 位（arm64-v8a）两个 APK。
+ * 客户端按**当前进程位数**（[android.os.Process.is64Bit]，API 21+）选包——32 位包
+ * 装在 64 位设备上进程也是 32 位，会继续拿 32 位包（保证可安装）；64 位包进程为
+ * 64 位，拿 64 位包。清单缺 apk64 时回落 apk，旧清单照常工作。
  *
  * **清单自举**：成功读到任何一份清单后，把原文落盘；下次检查的源列表 = 硬编码源
  * ∪ 清单里的 mirrors ∪ 上次命中的源。以后换托管只改清单，不必再发 APK。
@@ -169,7 +176,9 @@ object UpdateChecker {
 
     private fun parse(text: String, host: String): Remote? = try {
         val o = JSONObject(text)
-        val apk = o.optString("apk", "")
+        // 64 位进程优先拿 64 位包；清单没 apk64（旧清单）或取不到位数信息时回落 32 位包
+        val use64 = is64BitProcess() && o.optString("apk64", "").isNotEmpty()
+        val apk = o.optString(if (use64) "apk64" else "apk", "")
         if (apk.isEmpty()) null
         else Remote(
             versionCode = o.optInt("versionCode", 0),
@@ -177,12 +186,19 @@ object UpdateChecker {
             // apk 用"命中成功的那个 host"拼绝对地址，避免主域名取到清单却从备用域名下载
             apkUrl = if (apk.startsWith("http")) apk else host.trimEnd('/') + "/" + apk.trimStart('/'),
             notes = o.optString("notes", ""),
-            sha256 = o.optString("sha256", "").trim(),
+            sha256 = o.optString(if (use64) "sha256_64" else "sha256", "").trim(),
             mirrors = parseMirrors(o.optJSONArray("mirrors")),
             logApi = o.optString("logApi", "").trim()
         )
     } catch (e: Exception) {
         null
+    }
+
+    /** 当前进程是否 64 位；个别 ROM 裁掉该方法时按 32 位处理（回落 apk 字段）。 */
+    private fun is64BitProcess(): Boolean = try {
+        android.os.Process.is64Bit()
+    } catch (_: Throwable) {
+        false
     }
 
     /** 读 mirrors 数组：只收 http(s) 绝对地址，去重并限 8 条，防脏清单把检查拖成龟速。 */
