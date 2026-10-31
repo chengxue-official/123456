@@ -50,6 +50,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -316,8 +317,27 @@ class PlayerActivity : AppCompatActivity() {
      */
     private var prefetchJob: Job? = null
     @Volatile private var prefetchRunning = false
-    /** 本轮预取失败的 vid：不再反复重试，避免请求风暴被风控（切集后新窗口自然重来）。 */
-    private val failedPrefetch = mutableSetOf<String>()
+    /**
+     * 预取协程「当前这一集」正在下载的 vid（null = 不在下载中）。
+     *
+     * 起播切集时用它判断在途预取的目标是否正好是本集：自动连播是最常见时序
+     * （预取目标 = 下一集 = 马上要播的这一集），此时取消重下等于把这集的
+     * 下载时间从头再算一遍，转圈直接翻倍。改为等它落盘后命中缓存。
+     */
+    @Volatile private var prefetchTargetVid: String? = null
+    /**
+     * 预取失败退避：vid → 下次可重试时间。
+     * 旧实现是永久 Set，一次瞬断（线上 VIDAA_TV 2.0.6 的 `stream was reset: CANCEL`）
+     * 就把这一集永久拉黑，且拉黑不打日志，看起来像「预加载从没跑过」——
+     * 19 集连播全程 0 命中，每集都要现场取流+整集下载。改为带时间的退避。
+     */
+    private val prefetchRetryAt = mutableMapOf<String, Long>()
+    /**
+     * 播放器当前正在读的本地明文缓存文件（http 流播 / 未起播时为 null）。
+     * 预取发布成品时绝不覆盖它：预取晚于本集起播完成时（放弃等待后残留的僵尸任务）
+     * 直接改名会打断正在读的播放文件。
+     */
+    @Volatile private var activeClearFile: File? = null
     /**
      * 媒体 CDN 限流（HTTP 429）冷却截止时间。
      * 线上 1.1.3 MiTV 日志：预加载撞 429 后仍逐集推进，连环请求把限流窗口一直续着，
@@ -884,11 +904,19 @@ class PlayerActivity : AppCompatActivity() {
         streamingCurrent = false
         streamReady = false
 
-        // 切集时取消在途的预加载任务：它下载的是「按旧的下一集算出的目标」，
+        // 切集时处理在途的预加载任务：它下载的是「按旧的下一集算出的目标」，
         // 继续跑只会白抢带宽（且可能与本集写出同一个文件）。
-        // 注意：不删已下载的缓存文件，留给 findCachedClearFile 命中。
-        prefetchJob?.cancel()
-        prefetchJob = null
+        // 但自动连播是最常见时序——预取目标 = 下一集 = 马上要播的这一集，
+        // 此时取消等于把这集已下载的部分全部丢弃、从头再下，转圈时间直接翻倍
+        //（线上 VIDAA_TV 2.0.6：每集 2.7~3.4s 转圈、19 集 0 命中预取缓存）。
+        // 目标就是本集时不取消，改为等它落盘后命中缓存（有上限，见 PREFETCH_ADOPT_WAIT_MS）。
+        val adoptPrefetch = prefetchTargetVid == vid
+        if (adoptPrefetch) {
+            AppLog.d("PlayerActivity", "本集正在预取中，等它落盘 vid=$vid")
+        } else {
+            prefetchJob?.cancel()
+            prefetchJob = null
+        }
 
         // 切集/起播时清空弹幕缓存与画幅元数据（下一集可能横竖屏不同）
         danmakuFetchedWindows.clear()
@@ -918,7 +946,17 @@ class PlayerActivity : AppCompatActivity() {
         playJob = scope.launch {
             try {
                 // 预加载命中：本地已有明文 mp4，直接起播，跳过取流+下载+解密（消除切集卡顿）
-                val cached = withContext(Dispatchers.IO) { findCachedClearFile(vid) }
+                var cached = withContext(Dispatchers.IO) { findCachedClearFile(vid) }
+                if (cached == null && adoptPrefetch) {
+                    // 在途预取的目标就是本集：等它写完再播，比取消后从头下载快得多。
+                    // 超时（预取卡在慢节点）则取消它走现场取流+下载，起播不能被无限拖住。
+                    cached = waitForPrefetchFile(vid)
+                    if (cached == null && gen == playGen) {
+                        AppLog.d("PlayerActivity", "等待预取超时，改为现场下载 vid=$vid")
+                        prefetchJob?.cancel()
+                        prefetchJob = null
+                    }
+                }
                 if (cached != null) {
                     if (gen != playGen) return@launch
                     AppLog.d("PlayerActivity", "命中预加载缓存 vid=$vid")
@@ -1109,13 +1147,23 @@ class PlayerActivity : AppCompatActivity() {
      * @return 明文 mp4 文件 [out]
      */
     private fun downloadAndPrepare(
-        urls: List<String>, key: ByteArray?, vid: String, out: File, budgetMs: Long
+        urls: List<String>, key: ByteArray?, vid: String, out: File, budgetMs: Long,
+        prefetch: Boolean = false
     ): File {
-        val encFile = File(cacheDir, "enc_" + vid + "_" + cacheTag() + ".part")
-        val tmpFile = File(cacheDir, "clear_" + vid + "_" + cacheTag() + ".remux.part")
+        // 预取与起播可能同时处理同一个 vid（起播等预取超时后转现场下载，僵尸预取仍在跑）：
+        // part 文件必须分名，否则后启动的一方会把对方正在写的文件截断重写。
+        val suffix = if (prefetch) ".pf.part" else ".part"
+        val encFile = File(cacheDir, "enc_" + vid + "_" + cacheTag() + suffix)
+        val tmpFile = File(cacheDir, "clear_" + vid + "_" + cacheTag() + ".remux" + suffix)
         try {
             CencMp4Downloader(HttpClientProvider.get())
                 .downloadToFileWithRetry(urls, encFile, budgetMs)
+            if (prefetch && activeClearFile?.absolutePath == out.absolutePath) {
+                // 播放器正在读这个文件（本集已起播、预取后到）：直接改名会把文件
+                // 从正在读的句柄底下换掉，播放立即断流。按失败处理走退避，
+                // 播完这集后下一次预取窗口自然会重新下载它。
+                throw IllegalStateException("预取目标正被播放器使用: " + out.name)
+            }
             if (key != null) {
                 // BUG-115：重封装结果必须先写临时文件，成功后才改名成明文缓存。
                 // 直接写 out 时，中途任何异常（空隙不足、样本越界、磁盘满、进程被杀）
@@ -1302,6 +1350,8 @@ class PlayerActivity : AppCompatActivity() {
         }
         // 播放器上挂的内容已是本集（此后 recordHistory 才会写本集进度）
         loadedPos = currentPos
+        // 记录播放器正在读的本地明文缓存：预取发布成品时据此避让，防止覆盖在播文件
+        activeClearFile = if (source.scheme == "file") source.path?.let { File(it) } else null
         val cencKey = streamCencKey
         if (streamingCurrent && streamEncrypted && cencKey != null) {
             // 加密源直连流播：带上 ClearKey DRM 配置，由 MediaDrm 按 CENC 样本
@@ -1685,6 +1735,7 @@ class PlayerActivity : AppCompatActivity() {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(PREF_SPEED, speedIndex).apply()
         updateSpeedLabel()
         applySpeed()
+        updateEpisodeInfo()
         toast(getString(R.string.menu_speed) + "：" + SPEEDS[speedIndex].toString() + "x")
     }
 
@@ -1806,7 +1857,8 @@ class PlayerActivity : AppCompatActivity() {
      *  - **以文件存在为准**判断是否需要预取，自校正、无内存状态漂移。
      *  - 由 500ms 进度回调反复调用，切集后新窗口会自动补上；prefetchRunning
      *    保证同一时刻只有一个预取循环在跑。
-     *  - 失败后不立即重试该集（记入 failedPos），避免请求风暴被风控。
+     *  - 失败后按 [PREFETCH_FAIL_BACKOFF_MS] 退避（按当前倍速折算壁钟），
+     *    不再永久拉黑该集：一次网络瞬断不该让整部剧后续集数全部失去缓存。
      */
     private fun prefetchNext() {
         if (prefetchRunning) return
@@ -1816,16 +1868,18 @@ class PlayerActivity : AppCompatActivity() {
         // 媒体 CDN 限流冷却中：不发起任何预加载，等窗口过去
         if (System.currentTimeMillis() < mediaCooldownUntil) return
         if (mediaCooldownActive) {
-            // 冷却结束：清失败标记，让窗口内的集重新预取
+            // 冷却结束：清失败退避，让窗口内的集重新预取
             mediaCooldownActive = false
-            failedPrefetch.clear()
+            prefetchRetryAt.clear()
         }
         // 找出预取窗口内尚未缓存的集（currentPos+1 .. currentPos+PREFETCH_AHEAD）
         val pending = ArrayList<Int>()
         val end = minOf(currentPos + PREFETCH_AHEAD, vidList.size - 1)
+        val now = System.currentTimeMillis()
         for (p in (currentPos + 1)..end) {
             val vid = vidList.getOrNull(p) ?: continue
-            if (vid in failedPrefetch) continue
+            val retryAt = prefetchRetryAt[vid] ?: 0L
+            if (now < retryAt) continue
             if (findCachedClearFile(vid) != null) continue
             pending.add(p)
         }
@@ -1836,11 +1890,19 @@ class PlayerActivity : AppCompatActivity() {
         prefetchJob = scope.launch {
             try {
                 for (pos in pending) {
-                    if (gen != playGen) return@launch   // 已切集，本窗口作废
+                    if (gen != playGen) {
+                        // 已切集：本窗口的目标已过期。补日志——旧实现静默 return，
+                        // 线上 2.0.6 日志里预取相关只有 3 条，无法判断预取是否在跑。
+                        AppLog.d("PlayerActivity", "预加载窗口作废 pos=$pos gen=$gen/$playGen")
+                        return@launch
+                    }
                     val vid = vidList.getOrNull(pos) ?: continue
                     if (findCachedClearFile(vid) != null) continue
                     var ok = false
                     var rateLimited = false
+                    var cancelled = false
+                    // 供 playCurrent 判断「马上要播的这一集是否正在预取」，命中则不取消
+                    prefetchTargetVid = vid
                     try {
                         AppLog.d("PlayerActivity", "预加载 pos=$pos vid=$vid")
                         val video = withContext(Dispatchers.IO) {
@@ -1857,7 +1919,8 @@ class PlayerActivity : AppCompatActivity() {
                                         downloadAndPrepare(
                                             v.urls,
                                             if (v.encrypted) v.cencKey else null,
-                                            video.videoId, clearFile(video.videoId), 0L)
+                                            video.videoId, clearFile(video.videoId), 0L,
+                                            prefetch = true)
                                         ok = true
                                         break
                                     } catch (e: Exception) {
@@ -1879,7 +1942,8 @@ class PlayerActivity : AppCompatActivity() {
                                     downloadAndPrepare(
                                         video.urls,
                                         if (video.encrypted) video.cencKey else null,
-                                        video.videoId, clearFile(video.videoId), 0L)
+                                        video.videoId, clearFile(video.videoId), 0L,
+                                        prefetch = true)
                                     ok = true
                                 } catch (e: Exception) {
                                     AppLog.e("PlayerActivity", "预加载兜底失败", e)
@@ -1889,12 +1953,15 @@ class PlayerActivity : AppCompatActivity() {
                         }
                     } catch (e: Throwable) {
                         // 失败不打扰用户：切集时走正常路径（playCurrent 会重新取流）。
-                        // 记下 vid 本轮不再重试，避免每 500ms 一次形成请求风暴。
-                        if (e.message?.contains("cancel", ignoreCase = true) != true) {
-                            failedPrefetch.add(vid)
-                        }
+                        // 退避而非永久拉黑——旧实现（failedPrefetch 永久 Set）一次瞬断
+                        //（stream was reset: CANCEL）就把这集永久排除，之后每 500ms
+                        // 轮询都静默跳过，看起来像「预加载从没跑过」。
+                        cancelled = e.message?.contains("cancel", ignoreCase = true) == true
+                        if (!cancelled) markPrefetchFailed(vid)
                         if (e.message?.contains("HTTP 429") == true) rateLimited = true
                         AppLog.d("PlayerActivity", "预加载失败 pos=$pos: " + (e.message ?: ""))
+                    } finally {
+                        prefetchTargetVid = null
                     }
                     // 限流熔断必须在 gen 检查之前：切集瞬间撞 429 时（线上最高频
                     // 时序，MiTV 1.1.3 19:21:59.846），冷却若被 gen 提前 return
@@ -1910,14 +1977,47 @@ class PlayerActivity : AppCompatActivity() {
                     if (gen != playGen) return@launch
                     if (ok) {
                         AppLog.d("PlayerActivity", "预加载完成 pos=$pos vid=$vid")
+                    } else if (!cancelled) {
+                        markPrefetchFailed(vid)
                     } else {
-                        failedPrefetch.add(vid)
+                        AppLog.d("PlayerActivity", "预加载被取消 pos=$pos vid=$vid")
                     }
                 }
             } finally {
                 prefetchRunning = false
+                prefetchTargetVid = null
             }
         }
+    }
+
+    /**
+     * 等待在途预取把本集写成明文缓存（IO 线程轮询，上限 [PREFETCH_ADOPT_WAIT_MS]）。
+     * 预取退出（完成/失败/被取消）且文件仍不存在时提前返回 null，调用方据此
+     * 回退现场下载——绝不空等满 8s。
+     */
+    private suspend fun waitForPrefetchFile(vid: String): File? =
+        withContext(Dispatchers.IO) {
+            val deadline = System.currentTimeMillis() + PREFETCH_ADOPT_WAIT_MS
+            while (System.currentTimeMillis() < deadline) {
+                findCachedClearFile(vid)?.let { return@withContext it }
+                // 发布（rename）发生在 prefetchRunning 复位之前，这里读到
+                // !prefetchRunning 说明预取已收尾，不会再产出文件
+                if (!prefetchRunning) return@withContext findCachedClearFile(vid)
+                delay(150L)
+            }
+            null
+        }
+
+    /**
+     * 预取失败退避：同一集在退避期内不再重试，避免每 500ms 轮询形成请求风暴。
+     * 退避基线按当前播放倍速折算——2.0x 时每集壁钟只有一半，固定 60s 会
+     * 连错过好几集的预取窗口（用户选「倍速看剧」时预加载几乎失效）。
+     */
+    private fun markPrefetchFailed(vid: String) {
+        val speed = SPEEDS[speedIndex].coerceAtLeast(0.5f)
+        val backoff = (PREFETCH_FAIL_BACKOFF_MS / speed).toLong().coerceAtLeast(10_000L)
+        prefetchRetryAt[vid] = System.currentTimeMillis() + backoff
+        AppLog.d("PlayerActivity", "预加载退避 " + backoff + "ms vid=" + vid)
     }
 
     private fun fetchDanmaku(window: Long, dur: Long) {
@@ -2180,7 +2280,11 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun updateEpisodeInfo() {
         val total = vidList.size
-        val text = if (total > 0) "$title · 第 ${currentEpisode()} / $total 集" else title
+        var text = if (total > 0) "$title · 第 ${currentEpisode()} / $total 集" else title
+        // 倍速角标：倍速往往是很久以前在菜单里切的，用户早忘了。2.0x 下每集壁钟
+        // 只有一半（线上 VIDAA_TV 2.0.6 就是这个状态），用户会误以为「每集都快进着跳走」。
+        val speed = SPEEDS[speedIndex]
+        if (speed != 1.0f) text += " · " + speed + "x 倍速"
         episodeInfo.text = text
     }
 
@@ -2189,6 +2293,7 @@ class PlayerActivity : AppCompatActivity() {
             try { it.stop() } catch (_: Exception) {}
             try { it.clearMediaItems() } catch (_: Exception) {}
         }
+        activeClearFile = null
     }
 
     /**
@@ -3005,6 +3110,19 @@ class PlayerActivity : AppCompatActivity() {
          * 低内存盒子可接受；再大收益递减且挤占存储。
          */
         private const val PREFETCH_AHEAD = 5
+
+        /**
+         * 起播时若本集正在被预取，最多等它落盘的时间。
+         * 单集下载 1~3s（线上实测 1.2~2.7s），超时说明预取卡在慢节点，
+         * 此时取消它走现场下载，比继续干等更快。
+         */
+        private const val PREFETCH_ADOPT_WAIT_MS = 8_000L
+
+        /**
+         * 预取失败退避基线（实际按播放倍速折算壁钟：2.0x 时减半）。
+         * 旧实现是永久拉黑，一次网络瞬断就让整部剧后续集数再无缓存。
+         */
+        private const val PREFETCH_FAIL_BACKOFF_MS = 60_000L
 
         /**
          * 媒体 CDN 限流（HTTP 429）后的预加载冷却时长。
