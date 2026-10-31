@@ -26,11 +26,14 @@ class ClearKeyDrmCallback(private val key: ByteArray) : MediaDrmCallback {
         } catch (_: Exception) {
             JSONArray()
         }
-        val keys = JSONArray()
+        // BUG-118：kids 为空说明 key request 非法（PSSH 缺失或格式不支持）。此前用
+        // 16 字节全零占位 KID 回一条记录，密钥会被登记在全零 KID 下，与样本真实 KID
+        // 不匹配，解密照样失败，只是白等一轮 DRM 会话。这里直接失败，让 onPlayerError
+        // 立刻回退整集下载+本地解密，日志里也能直接看到原因。
         if (kids.length() == 0) {
-            // 个别 ROM 不带 kids：仍回一条记录，让 DRM 会话能建立
-            keys.put(keyEntry(KID_PLACEHOLDER))
+            throw IllegalStateException("ClearKey key request 缺少 kids，无法匹配密钥")
         }
+        val keys = JSONArray()
         for (i in 0 until kids.length()) {
             val kid = kids.optString(i, "")
             if (kid.isEmpty()) continue
@@ -48,9 +51,4 @@ class ClearKeyDrmCallback(private val key: ByteArray) : MediaDrmCallback {
 
     private fun b64Url(b: ByteArray): String =
         Base64.encodeToString(b, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
-
-    private companion object {
-        /** kids 缺失时的占位 kid（16 字节全 0 的 base64url），仅保证 JSON 结构合法 */
-        const val KID_PLACEHOLDER = "AAAAAAAAAAAAAAAAAAAAAA"
-    }
 }
