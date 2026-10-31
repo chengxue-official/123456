@@ -1112,11 +1112,24 @@ class PlayerActivity : AppCompatActivity() {
         urls: List<String>, key: ByteArray?, vid: String, out: File, budgetMs: Long
     ): File {
         val encFile = File(cacheDir, "enc_" + vid + "_" + cacheTag() + ".part")
+        val tmpFile = File(cacheDir, "clear_" + vid + "_" + cacheTag() + ".remux.part")
         try {
             CencMp4Downloader(HttpClientProvider.get())
                 .downloadToFileWithRetry(urls, encFile, budgetMs)
             if (key != null) {
-                CencMp4Remuxer.remuxToFile(encFile, out, key)
+                // BUG-115：重封装结果必须先写临时文件，成功后才改名成明文缓存。
+                // 直接写 out 时，中途任何异常（空隙不足、样本越界、磁盘满、进程被杀）
+                // 都会留下半截 clear_*.mp4，下次起播被 findCachedClearFile 当成有效
+                // 缓存直接播——表现为「这一集每次都失败」，连删缓存自愈都救不回来。
+                try {
+                    CencMp4Remuxer.remuxToFile(encFile, tmpFile, key)
+                    out.delete()
+                    if (!tmpFile.renameTo(out)) {
+                        tmpFile.copyTo(out, overwrite = true)
+                    }
+                } finally {
+                    tmpFile.delete()
+                }
             } else {
                 // 明文变体：下载件本身就是成品，直接改名成明文缓存
                 out.delete()

@@ -176,8 +176,11 @@ object UpdateChecker {
 
     private fun parse(text: String, host: String): Remote? = try {
         val o = JSONObject(text)
-        // 64 位进程优先拿 64 位包；清单没 apk64（旧清单）或取不到位数信息时回落 32 位包
-        val use64 = is64BitProcess() && o.optString("apk64", "").isNotEmpty()
+        // 64 位进程优先拿 64 位包。BUG-119：清单没给 sha256_64 时不取 64 位包——
+        // 无 sha256 等于裸下载，CDN/镜像被换成任意 APK 也校验不出来；32 位包在
+        // 64 位设备上照样能装，宁可回落带校验的 apk/sha256。
+        val sha64 = o.optString("sha256_64", "").trim()
+        val use64 = is64BitProcess() && o.optString("apk64", "").isNotEmpty() && sha64.isNotEmpty()
         val apk = o.optString(if (use64) "apk64" else "apk", "")
         if (apk.isEmpty()) null
         else Remote(
@@ -186,7 +189,7 @@ object UpdateChecker {
             // apk 用"命中成功的那个 host"拼绝对地址，避免主域名取到清单却从备用域名下载
             apkUrl = if (apk.startsWith("http")) apk else host.trimEnd('/') + "/" + apk.trimStart('/'),
             notes = o.optString("notes", ""),
-            sha256 = o.optString(if (use64) "sha256_64" else "sha256", "").trim(),
+            sha256 = if (use64) sha64 else o.optString("sha256", "").trim(),
             mirrors = parseMirrors(o.optJSONArray("mirrors")),
             logApi = o.optString("logApi", "").trim()
         )

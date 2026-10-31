@@ -110,12 +110,19 @@ public final class CencMp4Remuxer {
             // ---------- 3. 重写 moov，并按「原样拷贝 / 逐样本解密」流式写出 ----------
             byte[] newMoov = rebuildContainer(head, moov);
             long gap = mdatStart - (moov.start + (long) newMoov.length);
-            byte[] free = gap >= 8 ? buildBox("free", new byte[(int) gap - 8]) : new byte[0];
+            // BUG-117：mdat 区按原偏移逐样本拷贝（stco/co64 存的是绝对偏移），头部总长
+            // 必须保持不变，空隙用 free box 补齐。free box 自身至少 8 字节，空隙不足 8
+            // 时补不进去，mdat 会整体前移，产物必然损坏 —— 这里明确报错交给上层重试别的
+            // 变体（正常 HG 片源删掉 senc/saio/saiz/sinf 后空隙都在几百字节以上，走不到）。
+            if (gap < 8) {
+                throw new Exception("重封装头部空隙不足(" + gap + " 字节)，无法保持 mdat 偏移");
+            }
+            byte[] free = buildBox("free", new byte[(int) gap - 8]);
 
             try (FileOutputStream fos = new FileOutputStream(clear)) {
                 fos.write(head, 0, moov.start);
                 fos.write(newMoov);
-                if (free.length > 0) fos.write(free);
+                fos.write(free);
 
                 byte[] raw = new byte[COPY_CHUNK];
                 long pos = mdatStart;
