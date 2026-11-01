@@ -1033,7 +1033,7 @@ class PlayerActivity : AppCompatActivity() {
                     mediaCooldownActive = true
                     retryLimited429 = true
                 }
-                // BUG-114：身份被拒（自动换身份+网页兜底都失败）时给出「重试」按钮，
+                // BUG-114：身份被拒（多轮退避 + 自动换身份都失败）时给出「重试」按钮，
                 // 实际是换新设备身份后重播——用户不需要摸到日志页去按。
                 showError(
                         when {
@@ -1166,8 +1166,8 @@ class PlayerActivity : AppCompatActivity() {
         // 但仅按「预取/起播」分名仍不够——同一 vid 的两个主路径写入方也会并存
         //（播放入口被触发两次 → 两个 PlayerActivity 实例同时起播同一集，模拟器实测
         // 第 4 集即此场景）：共享同名时先完成方 finally 的 delete() 会把对方仍在写/
-        // 待 remux 的文件删掉，对方 remux 抛 ENOENT，误报「视频下载或解密失败」并落
-        // 网页兜底（该集非免费时用户看到「未开放免费观看」提示）。故每次调用取唯一名。
+        // 待 remux 的文件删掉，对方 remux 抛 ENOENT，误报「视频下载或解密失败」。
+        // 故每次调用取唯一名。
         val suffix = if (prefetch) ".pf.part" else ".part"
         val uniq = (System.nanoTime() ushr 6).toString(36) + "-" + Integer.toHexString(hashCode())
         val encFile = File(cacheDir, "enc_" + vid + "_" + cacheTag() + "_" + uniq + suffix)

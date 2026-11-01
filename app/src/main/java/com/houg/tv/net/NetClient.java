@@ -55,7 +55,9 @@ import okhttp3.Response;
 /**
  * HG短剧网络层（分类 / 详情 / 播放 / 搜索）。
  * 分类/详情走 App 版接口（X-Gorgon 签名），失败回退网页版（免签名）；
- * 搜索/榜单走网页版；播放走 App 版 multi_video_model，失败回退网页版公开 360p 直链。
+ * 搜索/榜单走网页版；播放只走 App 版 multi_video_model——网页版公开直链
+ * 只覆盖前几集（accessible_episode_cnt 恒为 3），会误导用户「该集不免费」，
+ * 已整体移除（2026-11-01，BUG-128 复盘决策：目标是全剧集免费）。
  * 兼容 Android 4.0（API 14）：OkHttp 3.12.13 + 系统 org.json，避开 StandardCharsets（API 19）。
  */
 public final class NetClient {
@@ -65,9 +67,8 @@ public final class NetClient {
 
     /**
      * 「本机设备身份不被HG接口放行」的播放失败提示（App 通道全部 200 空 body，
-     * 自动换新身份重试后仍如此，且网页直链兜底也失败时给出，替代误导性的
-     * 「该集未开放免费观看」）。文案按「能自救的动作」分层，不再让用户以为
-     * 是内容没上线。
+     * 自动换新身份重试后仍如此时给出）。文案按「能自救的动作」分层，
+     * 不让用户以为是内容没上线。
      *
      * BUG-114：同时作为 PlayerActivity 显示「重试」按钮的判定依据（按字符串相等）。
      * 该场景下手动重试会走同一条取流重试链；换身份已降级为「多轮退避仍全空」时的
@@ -130,7 +131,8 @@ public final class NetClient {
      *
      * <p>最坏路径是 6 域名 × 2 轮 × 2 次 + legacy = 25 次请求，单次 connect 8s /
      * read 20s，理论上能把起播拖到分钟级（电视端用户只会看到一直转圈）。
-     * 超过预算直接放弃 App 通道、回退网页直链——把时间留给上层给用户一个明确结果。
+     * 超过预算直接放弃 App 通道并把真实错误上抛（网页直链兜底已移除）——
+     * 把时间留给上层给用户一个明确结果。
      */
     private static final long APP_CHANNEL_BUDGET_MS = 25_000L;
 
@@ -1503,7 +1505,7 @@ public final class NetClient {
         // 前者是用户能自救的网络问题，后者才是内容侧限制，提示文案必须分开。
         // BUG-104：判定结果只写回调用方传入的局部标记，不再落实例字段。
         blockedOut.set(false);
-        // BUG-107：整个 App 通道共享一份总耗时预算，超预算即放弃，交给网页兜底。
+        // BUG-107：整个 App 通道共享一份总耗时预算，超预算即放弃并上抛真实错误。
         long deadline = System.currentTimeMillis() + APP_CHANNEL_BUDGET_MS;
         int emptyBodyCount = 0;
         int dataResponses = 0;
@@ -1790,44 +1792,25 @@ public final class NetClient {
         // BUG-104：身份拦截判定必须是「本次取流局部」的——NetClient 是全局单例，
         // 起播与预取下一集并发时，实例字段会被另一路请求的结果覆盖。
         AtomicBoolean appBlocked = new AtomicBoolean(false);
-        // App 通道：video_model/v1（需注册身份 + Cookie），失败回退网页版公开直链。
-        Exception appErr = null;
+        // App 通道：video_model/v1（需注册身份 + Cookie）。
+        // 2026-11-01 移除网页版公开直链兜底：该直链只开放前 accessible_episode_cnt 集
+        //（实测恒为 3），第 4 集起一律 404——于是 App 通道的任何抖动（DNS 失败 /
+        // 空 body / 超时）都会被兜底那句「该集未开放免费观看」误导成版权限制
+        //（模拟器实测：第 3→4 集连播正因此弹提示，BUG-128 复盘）。
+        // 本项目口径是全剧集免费，兜底链只剩反作用；失败直接把 App 通道的真实原因上抛。
         try {
             return appVideoModel(vid, maxHeight, appBlocked);
-        } catch (Exception e) {
-            appErr = e;
-            AppLog.INSTANCE.e(TAG, "App 取流失败，回退网页版公开直链 vid=" + vid, e);
-        }
-        try {
-            return webVideoModel(vid);
-        } catch (Exception webErr) {
-            AppLog.INSTANCE.e(TAG, "网页版公开直链也不可用 vid=" + vid, webErr);
-            webErr.addSuppressed(appErr);
-            // BUG-101：App 通道已拿到内容侧的权威结论（片源解密失败 / 只有 AV1），
-            // 不能再被网页兜底那句猜测性的「该集未开放免费观看」覆盖，否则用户
-            // 永远看不到真正可操作的提示。
-            if (appErr != null && isAuthoritativeContentError(appErr)) {
-                AppLog.INSTANCE.e(TAG, "采用 App 通道的权威错误（非网页兜底猜测）vid=" + vid, webErr);
-                throw new Exception(appErr.getMessage(), webErr);
-            }
+        } catch (Exception appErr) {
+            AppLog.INSTANCE.e(TAG, "App 取流失败 vid=" + vid, appErr);
             if (appBlocked.get()) {
-                // App 通道被「200 空 body」全拦 → 不是该集的版权限制，
-                // 别用「该集未开放免费观看」误导用户，直接给出可自救的提示。
-                AppLog.INSTANCE.e(TAG, "判定为本机设备身份问题（非该集版权限制）vid=" + vid, webErr);
-                throw new Exception(DEVICE_IDENTITY_FAILED_MSG, webErr);
+                // App 通道被「200 空 body」全拦 → 本机设备身份问题（非该集版权限制），
+                // 文案指引用户自救（UI 按该文案显示「重试」= 换新身份，BUG-114）。
+                throw new Exception(DEVICE_IDENTITY_FAILED_MSG, appErr);
             }
-            throw webErr;
+            // 其余错误（网络异常 / 密钥不可用 / 只有 AV1 / 播放信息为空…）原样上抛，
+            // 用户看到的与日志里的一致，不再被任何猜测性文案覆盖。
+            throw appErr;
         }
-    }
-
-    /**
-     * App 通道的「权威内容错误」：接口确实返回了数据，只是本机解不了。
-     * BUG-101：这类文案来自 {@link #appVideoModel} 的变体收集阶段，可信度高于
-     * 网页兜底推测出的「该集未开放免费观看」。
-     */
-    private static boolean isAuthoritativeContentError(Exception e) {
-        String m = e.getMessage();
-        return m != null && (m.contains("HG媒体密钥不可用") || m.contains("该集片源只有 AV1"));
     }
 
     private VideoModel appVideoModel(String vid, int maxHeight, AtomicBoolean blockedOut) throws Exception {
@@ -2135,76 +2118,6 @@ public final class NetClient {
             }
         }
         throw last != null ? last : new Exception("播放地址请求失败");
-    }
-
-    /**
-     * 网页版公开直链兜底（免签名、免 device_id、免解密）。
-     *
-     * <p><b>2026-10-21 实测（probe 系列）</b>：
-     * <ul>
-     *   <li>网页版 {@code /video/public/{vid}/360p.mp4} 是一段<b>普通明文 mp4</b>
-     *       （无 CENC、无字节跳动签名头），仅对<b>前 accessible_episode_cnt 集</b>开放，
-     *       之后的集一律 HTTP 404。抽样 14 部剧边界完全吻合，当前该值恒为 3。</li>
-     *   <li>该直链对 UA / Referer <b>不敏感</b>：App UA + novel.snssdk.com、浏览器 UA、
-     *       不带 Referer 均 200，所以下载端无需为它改 header。</li>
-     *   <li>早期观测窗口里同一个 vid 出现过随机 200/404（概率门），故探测带退避重试。</li>
-     * </ul>
-     *
-     * <p>因此这里只需按 vid 探一次直链：200 → 返回单变体 360p 明文模型；否则报
-     * 「该集未开放免费观看」，由 UI 提示用户（而不是给黑屏）。
-     */
-    private VideoModel webVideoModel(String vid) throws Exception {
-        String url = WEB_SITE + "/video/public/" + vid + "/360p.mp4";
-        int code = probeHttpCode(url);
-        if (code != 200) {
-            if (code == 404) {
-                throw new Exception("该集未开放免费观看（HG网页版仅前几集免费）");
-            }
-            throw new Exception("网页版免费源不可用（HTTP " + code + "）");
-        }
-        List<String> urls = new ArrayList<>();
-        urls.add(url);
-        List<Variant> variants = new ArrayList<>();
-        variants.add(new Variant("h264", 360, urls, null, false));
-        AppLog.INSTANCE.d(TAG, "webVideoModel 命中网页版公开直链 vid=" + vid);
-        return new VideoModel(vid, urls, 0, WEB_SITE + "/", null, false, variants, "h264", 360);
-    }
-
-    /**
-     * 探测 URL 的 HTTP 状态码（HEAD，带退避重试）；网络层异常一律返回 -1。
-     * 只关心「能不能下」，不读 body。
-     *
-     * <p>4xx 视为确定性结果立即返回（尤其 404 = 该集未开放，重试无意义）；
-     * 只有网络异常与 5xx 才退避重试（早期观测到的概率门 / CDN 抖动）。
-     */
-    private int probeHttpCode(String url) {
-        int lastCode = -1;
-        for (int attempt = 0; attempt < WEB_ATTEMPTS; attempt++) {
-            if (attempt > 0) {
-                try {
-                    Thread.sleep(WEB_RETRY_BACKOFF_MS * attempt);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-            try {
-                Request.Builder rb = new Request.Builder().url(url)
-                        .header("User-Agent", WEB_UA)
-                        .header("Referer", WEB_SITE + "/")
-                        .header("Accept", "*/*")
-                        .head();
-                try (Response resp = client.newCall(rb.build()).execute()) {
-                    lastCode = resp.code();
-                    if (lastCode < 500) return lastCode;
-                    AppLog.INSTANCE.d(TAG, "probeHttp 第" + (attempt + 1) + "次 HTTP "
-                            + lastCode + " url=" + url);
-                }
-            } catch (Exception e) {
-                AppLog.INSTANCE.e(TAG, "probeHttp 探测异常 第" + (attempt + 1) + "次 url=" + url, e);
-            }
-        }
-        return lastCode;
     }
 
     /* ==================== 弹幕（App 版） ==================== */
