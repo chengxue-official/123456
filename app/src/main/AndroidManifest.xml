@@ -74,7 +74,8 @@
             android:name="com.houg.tv.PlayerActivity"
             android:theme="@style/AppTheme.Fullscreen"
             android:screenOrientation="behind"
-            android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
+            android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:launchMode="singleTop" />
 
         <activity
             android:name="com.houg.tv.SettingsActivity"

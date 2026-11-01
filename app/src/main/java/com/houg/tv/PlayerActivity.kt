@@ -1163,9 +1163,18 @@ class PlayerActivity : AppCompatActivity() {
     ): File {
         // 预取与起播可能同时处理同一个 vid（起播等预取超时后转现场下载，僵尸预取仍在跑）：
         // part 文件必须分名，否则后启动的一方会把对方正在写的文件截断重写。
+        // 但仅按「预取/起播」分名仍不够——同一 vid 的两个主路径写入方也会并存
+        //（播放入口被触发两次 → 两个 PlayerActivity 实例同时起播同一集，模拟器实测
+        // 第 4 集即此场景）：共享同名时先完成方 finally 的 delete() 会把对方仍在写/
+        // 待 remux 的文件删掉，对方 remux 抛 ENOENT，误报「视频下载或解密失败」并落
+        // 网页兜底（该集非免费时用户看到「未开放免费观看」提示）。故每次调用取唯一名。
         val suffix = if (prefetch) ".pf.part" else ".part"
-        val encFile = File(cacheDir, "enc_" + vid + "_" + cacheTag() + suffix)
-        val tmpFile = File(cacheDir, "clear_" + vid + "_" + cacheTag() + ".remux" + suffix)
+        val uniq = (System.nanoTime() ushr 6).toString(36) + "-" + Integer.toHexString(hashCode())
+        val encFile = File(cacheDir, "enc_" + vid + "_" + cacheTag() + "_" + uniq + suffix)
+        val tmpFile = File(cacheDir, "clear_" + vid + "_" + cacheTag() + ".remux." + uniq + suffix)
+        // 成品已存在（另一写入方刚完成同一 vid 同一档位）：直接复用，避免重复下载
+        // 整集抢带宽，也避免 rename 时把对方正在播放的文件换掉。
+        if (out.exists() && out.length() > 0) return out
         try {
             CencMp4Downloader(HttpClientProvider.get())
                 .downloadToFileWithRetry(urls, encFile, budgetMs)
