@@ -6,6 +6,7 @@ import java.io.FileOutputStream;
 import java.io.RandomAccessFile;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
@@ -105,7 +106,18 @@ public final class CencMp4Remuxer {
                     samples.add(new EncSample(s.offset, s.size, ivOffset, info.ivSize));
                 }
             }
-            samples.sort(Comparator.comparingInt(a -> a.offset));
+            // ⚠️ 不用 samples.sort(Comparator.comparingInt(...))：
+            // 1) List.sort / Comparator.comparingInt 都是 API 24+，本项目未开
+            //    coreLibraryDesugaring，API 21~23 会直接 NoSuchMethodError；
+            // 2) lambda 会生成 $$ExternalSyntheticLambda0 类，老设备内存紧张时类加载失败，
+            //    线上（9R59 G910M / Android 5.1.1）报错只剩这个类名：
+            //    `起播失败 vid=... | ...CencMp4Remuxer$$ExternalSyntheticLambda0`。
+            Collections.sort(samples, new Comparator<EncSample>() {
+                @Override
+                public int compare(EncSample a, EncSample b) {
+                    return a.offset < b.offset ? -1 : (a.offset == b.offset ? 0 : 1);
+                }
+            });
 
             // ---------- 3. 重写 moov，并按「原样拷贝 / 逐样本解密」流式写出 ----------
             byte[] newMoov = rebuildContainer(head, moov);

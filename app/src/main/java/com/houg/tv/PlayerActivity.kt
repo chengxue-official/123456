@@ -1250,13 +1250,23 @@ class PlayerActivity : AppCompatActivity() {
                             + " 耗时(ms)=" + (System.currentTimeMillis() - t0)
                             + " tkhd=" + tkhdWidth + "x" + tkhdHeight + " rot=" + tkhdRotation)
                     return file
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
+                    // 协程取消必须透传：否则被取代的起播会继续去撞下一个变体
+                    if (e is java.util.concurrent.CancellationException) throw e
                     // 保留「可重试」异常（429/5xx/瞬断）优先：变体1 撞 429、变体2
                     // 报 404 时若被 404 覆盖，上层看不出限流，既不给冷却也不给重试
                     // 按钮（QA BUG-003）。
-                    if (lastError == null || isRetryableMediaError(e)) lastError = e
+                    // ⚠️ 必须接 Throwable 而非 Exception：低配机 remux/下载会抛
+                    // OutOfMemoryError（属 Error），旧实现漏接会直接中断整个变体循环，
+                    // 连「哪个变体、哪一步失败」都记不下来（线上只余外层一条无栈报错）。
+                    val ex = e as? Exception ?: Exception(e)
+                    if (lastError == null || (e is Exception && isRetryableMediaError(e))) {
+                        lastError = ex
+                    }
                     AppLog.e("PlayerActivity", "变体下载/解密失败 codec=" + v.codec
                             + " encrypted=" + v.encrypted, e)
+                    // 内存类失败：回收一轮再试下一个变体（32 位老电视常能腾出空间）
+                    if (isMemoryError(e)) System.gc()
                 }
             }
         } else {
@@ -1269,8 +1279,10 @@ class PlayerActivity : AppCompatActivity() {
                     video.videoId, file, remainingBudget())
                 parseTkhd(file)
                 return file
-            } catch (e: Exception) {
-                if (lastError == null || isRetryableMediaError(e)) lastError = e
+            } catch (e: Throwable) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                val ex = e as? Exception ?: Exception(e)
+                if (lastError == null || (e is Exception && isRetryableMediaError(e))) lastError = ex
                 AppLog.e("PlayerActivity", "下载/解密失败", e)
             }
         }

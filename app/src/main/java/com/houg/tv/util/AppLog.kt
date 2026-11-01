@@ -73,7 +73,32 @@ object AppLog {
     fun d(tag: String, msg: String) = append("D", tag, msg)
 
     fun e(tag: String, msg: String, t: Throwable?) {
-        val detail = if (t != null) " | " + (t.message ?: t.javaClass.simpleName) else ""
+        var detail = ""
+        if (t != null) {
+            detail = " | " + t.javaClass.name
+            t.message?.takeIf { it.isNotEmpty() }?.let { detail += ": " + it }
+            // 堆栈前 3 帧定位到文件:行号。线上 Android 5.1 大量异常无 message
+            //（NPE），或只剩 lambda 类名（NoClassDefFoundError），只有类名无法
+            // 定位代码位置——必须带行号才能从一份 Blob 日志定根因。
+            try {
+                val frames = t.stackTrace
+                var taken = 0
+                for (st in frames) {
+                    if (taken >= 3) break
+                    if (st.isNativeMethod) continue
+                    val frame = " @ " + st.className + "." + st.methodName +
+                            "(" + st.fileName + ":" + st.lineNumber + ")"
+                    detail += frame
+                    taken++
+                }
+            } catch (ignored: Throwable) {
+                // 堆栈不可用时不影响主消息
+            }
+            t.cause?.let { c ->
+                detail += " <= " + c.javaClass.name
+                c.message?.takeIf { it.isNotEmpty() }?.let { detail += ": " + it }
+            }
+        }
         append("E", tag, msg + detail)
     }
 
