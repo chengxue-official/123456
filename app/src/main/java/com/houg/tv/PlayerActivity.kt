@@ -906,6 +906,11 @@ class PlayerActivity : AppCompatActivity() {
         //（线上 VIDAA_TV 2.0.6：每集 2.7~3.4s 转圈、19 集 0 命中预取缓存）。
         // 目标就是本集时不取消，改为等它落盘后命中缓存（有上限，见 PREFETCH_ADOPT_WAIT_MS）。
         val adoptPrefetch = prefetchTargetVid == vid
+        // 记住「被收养的到底是哪个预取任务」：等待与取消都必须绑定这个具体任务，
+        // 不能看全局 prefetchRunning（QA BUG-123：预取本集失败后，500ms 轮询会另起
+        // 一轮去预取别的集并把 prefetchRunning 重新置 true，届时等待方既分不清
+        // 「等的那一集已出结果」，超时时的取消还会把新一轮的正常预取一起杀掉）。
+        val adoptedJob = if (adoptPrefetch) prefetchJob else null
         if (adoptPrefetch) {
             AppLog.d("PlayerActivity", "本集正在预取中，等它落盘 vid=$vid")
         } else {
@@ -945,11 +950,15 @@ class PlayerActivity : AppCompatActivity() {
                 if (cached == null && adoptPrefetch) {
                     // 在途预取的目标就是本集：等它写完再播，比取消后从头下载快得多。
                     // 超时（预取卡在慢节点）则取消它走现场取流+下载，起播不能被无限拖住。
-                    cached = waitForPrefetchFile(vid)
+                    cached = waitForPrefetchFile(vid, adoptedJob)
                     if (cached == null && gen == playGen) {
                         AppLog.d("PlayerActivity", "等待预取超时，改为现场下载 vid=$vid")
-                        prefetchJob?.cancel()
-                        prefetchJob = null
+                        // 只杀本集那一个任务；若它已收尾、prefetchJob 已被新一轮
+                        // 预取（别的集）接管，则什么都不该取消
+                        if (prefetchJob === adoptedJob) {
+                            prefetchJob?.cancel()
+                            prefetchJob = null
+                        }
                     }
                 }
                 if (cached != null) {
@@ -1153,12 +1162,6 @@ class PlayerActivity : AppCompatActivity() {
         try {
             CencMp4Downloader(HttpClientProvider.get())
                 .downloadToFileWithRetry(urls, encFile, budgetMs)
-            if (prefetch && activeClearFile?.absolutePath == out.absolutePath) {
-                // 播放器正在读这个文件（本集已起播、预取后到）：直接改名会把文件
-                // 从正在读的句柄底下换掉，播放立即断流。按失败处理走退避，
-                // 播完这集后下一次预取窗口自然会重新下载它。
-                throw IllegalStateException("预取目标正被播放器使用: " + out.name)
-            }
             if (key != null) {
                 // BUG-115：重封装结果必须先写临时文件，成功后才改名成明文缓存。
                 // 直接写 out 时，中途任何异常（空隙不足、样本越界、磁盘满、进程被杀）
@@ -1166,6 +1169,12 @@ class PlayerActivity : AppCompatActivity() {
                 // 缓存直接播——表现为「这一集每次都失败」，连删缓存自愈都救不回来。
                 try {
                     CencMp4Remuxer.remuxToFile(encFile, tmpFile, key)
+                    // 「正在被播放器读取」检查放在 remux 之后、发布之前（QA BUG-126）：
+                    // 只在下载前查挡不住 remux 这几百 ms——期间播放器可能刚好起播本集，
+                    // rename 仍会把文件从在播句柄底下换掉。晚检查最多多花一次 remux。
+                    if (prefetch && activeClearFile?.absolutePath == out.absolutePath) {
+                        throw IllegalStateException("预取目标正被播放器使用: " + out.name)
+                    }
                     out.delete()
                     if (!tmpFile.renameTo(out)) {
                         tmpFile.copyTo(out, overwrite = true)
@@ -1174,6 +1183,9 @@ class PlayerActivity : AppCompatActivity() {
                     tmpFile.delete()
                 }
             } else {
+                if (prefetch && activeClearFile?.absolutePath == out.absolutePath) {
+                    throw IllegalStateException("预取目标正被播放器使用: " + out.name)
+                }
                 // 明文变体：下载件本身就是成品，直接改名成明文缓存
                 out.delete()
                 if (!encFile.renameTo(out)) {
@@ -1883,6 +1895,9 @@ class PlayerActivity : AppCompatActivity() {
         prefetchRunning = true
         val gen = playGen
         prefetchJob = scope.launch {
+            // 收尾时把 prefetchJob 置回 null（仅当仍是自己）：waitForPrefetchFile
+            // 据此区分「本集预取已出结果」与「新一轮预取接管了字段」
+            val self = coroutineContext[Job]
             try {
                 for (pos in pending) {
                     if (gen != playGen) {
@@ -1981,23 +1996,26 @@ class PlayerActivity : AppCompatActivity() {
             } finally {
                 prefetchRunning = false
                 prefetchTargetVid = null
+                if (prefetchJob === self) prefetchJob = null
             }
         }
     }
 
     /**
-     * 等待在途预取把本集写成明文缓存（IO 线程轮询，上限 [PREFETCH_ADOPT_WAIT_MS]）。
-     * 预取退出（完成/失败/被取消）且文件仍不存在时提前返回 null，调用方据此
-     * 回退现场下载——绝不空等满 8s。
+     * 等待「本集那个」在途预取（[adoptedJob]）把本集写成明文缓存
+     * （IO 线程轮询，上限 [PREFETCH_ADOPT_WAIT_MS]）。
+     *
+     * 终判只认 adoptedJob 自己：prefetchJob 字段一旦不再指向它
+     * （预取收尾时置 null，或被新一轮预取替换成别的任务），本集的预取就
+     * 再也不会产出文件，立即返回最终检查结果——不空转，也不误伤新任务。
      */
-    private suspend fun waitForPrefetchFile(vid: String): File? =
+    private suspend fun waitForPrefetchFile(vid: String, adoptedJob: Job?): File? =
         withContext(Dispatchers.IO) {
+            if (adoptedJob == null) return@withContext findCachedClearFile(vid)
             val deadline = System.currentTimeMillis() + PREFETCH_ADOPT_WAIT_MS
             while (System.currentTimeMillis() < deadline) {
                 findCachedClearFile(vid)?.let { return@withContext it }
-                // 发布（rename）发生在 prefetchRunning 复位之前，这里读到
-                // !prefetchRunning 说明预取已收尾，不会再产出文件
-                if (!prefetchRunning) return@withContext findCachedClearFile(vid)
+                if (prefetchJob !== adoptedJob) return@withContext findCachedClearFile(vid)
                 delay(150L)
             }
             null
@@ -2305,6 +2323,11 @@ class PlayerActivity : AppCompatActivity() {
         try {
             cacheDir.listFiles()?.forEach { f ->
                 if (!f.name.startsWith("clear_")) return@forEach
+                // keep 模式下只清「成品 .mp4」：`clear_<vid>_<tag>.remux[.pf].part`
+                // 是在途临时文件（downloadAndPrepare 的 finally 负责删），
+                // 它们的名字还原不出 vid，永远匹配不上 keep，会被误删——
+                // 切集/清理正好撞上在途 remux 时，那一集的预取就白下了（QA BUG-124）。
+                if (keep != null && !f.name.endsWith(".mp4")) return@forEach
                 if (keep != null) {
                     var name = f.name.removePrefix("clear_").removeSuffix(".mp4")
                     for (t in tags) name = name.removeSuffix(t)
