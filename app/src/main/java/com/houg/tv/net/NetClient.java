@@ -70,13 +70,13 @@ public final class NetClient {
      * 是内容没上线。
      *
      * BUG-114：同时作为 PlayerActivity 显示「重试」按钮的判定依据（按字符串相等）。
-     * 该场景下手动重试 = 换新设备身份 + 重播；因此文案里不再指引「调试日志 → 重置身份」，
-     * 用户不需要理解「身份」概念，只看到「重试」。
+     * 该场景下手动重试会走同一条取流重试链；换身份已降级为「多轮退避仍全空」时的
+     * 最后手段（真机日志实证空 body 多为瞬时抖动，重试即可恢复，见 BUG-127）。
      */
     public static final String DEVICE_IDENTITY_FAILED_MSG =
-            "HG接口未放行本机（已自动换新设备身份重试，仍失败，不是该集没上线）。"
-                    + "请检查电视网络后点下方「重试」（遥控器按确定键），会换一个新身份再播一次；"
-                    + "仍看不了可卸载重装本应用。";
+            "HG接口未放行本机（已自动重试多轮，仍失败，不是该集没上线）。"
+                    + "请检查电视网络后点下方「重试」（遥控器按确定键）再播一次；"
+                    + "若反复出现，等几分钟再试通常可恢复。";
 
     private static final Charset UTF8 = Charset.forName("UTF-8");
 
@@ -1512,11 +1512,22 @@ public final class NetClient {
         int networkErrorCount = 0;
         int attemptCount = Math.min(APP_HOST_ATTEMPTS, HostPool.size());
         int start = HostPool.currentIndex();
-        // 主机轮询最多 2 轮（B4）：第 1 轮若「一次非空响应都没有、全是 200 空 body」，
-        // 当前身份大概率已被服务端判废（线上实证：旧身份全空 body，换新身份立即恢复）。
-        // 此时强制丢弃身份 → 重新注册 → 用新身份再试一轮；注册失败才放弃。
+        // BUG-127：空 body 不是「身份被判废」，而是服务端按请求频率的瞬时抖动。
+        //
+        // 真机日志实证（docs/qa/applog-64bit.txt 2026-10-31，REDMI 25102RKBEC）：
+        //  · 同一域名、同一身份、同一 vid，空 6~13 次后**必定成功**（32 位包同样）；
+        //  · 6 个域名全都有空有成，空:成 ≈ 7:1 → 与域名、身份都无关；
+        //  · 一次 12 连空之后 resetIdentity + registerNow 才拿到数据，而日志里
+        //    「已使用 0 小时」说明身份一直在被无谓重置——新身份注册 13 秒后照样全空。
+        // 旧实现在第 1 轮 12 连空就换身份，等于：白扔一个服务端已认识的好身份、
+        // 多打一次注册请求、并且把 12 个请求以 60ms 间隔轰出去（自我放大风控）。
+        //
+        // 现策略（总预算 APP_CHANNEL_BUDGET_MS 不变）：
+        //  第 1 轮：原身份，6 域名 × 2 次，空响应后逐次小退避；
+        //  第 2 轮：不换身份，退避 2s 后原身份再来一轮（把重试摊到时间轴上）；
+        //  第 3 轮：仍全空才换新身份（兼容真正的身份黑名单），再做最后一轮。
         outer:
-        for (int round = 1; round <= 2; round++) {
+        for (int round = 1; round <= 3; round++) {
             for (int i = 0; i < attemptCount; i++) {
                 if (System.currentTimeMillis() >= deadline) break outer; // BUG-107
                 String host = HostPool.at(start + i);
@@ -1534,34 +1545,50 @@ public final class NetClient {
                     if (json == null) {
                         emptyBodyCount++;
                         lastError = new Exception("播放接口空响应");
-                        continue; // 网关挡掉：原地重试
+                        // 逐次加大退避：立即重发只会 60ms 连发十几下，
+                        // 把本可一次成功的抖动放大成持续空响应。
+                        sleepQuiet(200L * (r + 1));
+                        continue; // 网关挡掉：退避后原地重试
                     }
                     dataResponses++;
                     JSONObject model = extractVideoModel(json, vid);
                     if (model != null) {
                         HostPool.reportSuccess(host);
+                        // 诊断锚点：线上据此统计「空 body 多但最终成功」的比例。
+                        AppLog.INSTANCE.d(TAG, "取流成功 round=" + round
+                                + " 空body=" + emptyBodyCount + " vid=" + vid);
                         return model;
                     }
                     lastError = new Exception("HG播放信息为空");
                     break; // 响应正常但没模型：换域名
                 }
                 HostPool.reportFailure(host);
+                // 域名之间的最小间隔：避免同一身份在 1 秒内打出 10+ 个取流请求。
+                if (i + 1 < attemptCount) sleepQuiet(120L);
             }
-            if (round == 1) {
+            if (round < 3) {
                 if (dataResponses > 0 || emptyBodyCount == 0 || networkErrorCount > 0) {
                     // 已有有效数据 / 没有任何 200 空 body / 混入了真·网络错误（超时、DNS、5xx）
                     // ——后两者都不是「身份被判废」的强指纹，换身份救不了（BUG-105）
                     break;
                 }
-                try {
-                    DeviceRegister.resetIdentity();
-                    DeviceRegister.registerNow(client);
-                    AppLog.INSTANCE.e(TAG, "第 1 轮全部 200 空 body → 已换新设备身份，重试一轮"
-                            + "（新 device_id=" + DeviceRegister.deviceId() + "）", null);
-                    start = HostPool.currentIndex();
-                } catch (Exception e) {
-                    AppLog.INSTANCE.e(TAG, "换新设备身份失败，不再重试播放接口", e);
-                    break;
+                if (round == 1) {
+                    // 退避后用原身份再来一轮：空 body 多为瞬时抖动，换身份是无效动作。
+                    AppLog.INSTANCE.e(TAG, "第 1 轮全部 200 空 body（" + emptyBodyCount
+                            + " 次）→ 保留原身份，退避 2s 后重试", null);
+                    sleepQuiet(2000L);
+                } else {
+                    try {
+                        DeviceRegister.resetIdentity();
+                        DeviceRegister.registerNow(client);
+                        AppLog.INSTANCE.e(TAG, "前 2 轮全部 200 空 body → 换新设备身份做最后一轮"
+                                + "（新 device_id=" + DeviceRegister.deviceId() + "）", null);
+                        start = HostPool.currentIndex();
+                        sleepQuiet(1000L);
+                    } catch (Exception e) {
+                        AppLog.INSTANCE.e(TAG, "换新设备身份失败，不再重试播放接口", e);
+                        break;
+                    }
                 }
             }
         }
@@ -1599,11 +1626,21 @@ public final class NetClient {
         blockedOut.set(blocked); // BUG-104：只影响本次取流的文案判定
         if (blocked) {
             AppLog.INSTANCE.e(TAG, "App 播放通道 " + emptyBodyCount
-                    + " 次全部返回 200 空 body（已尝试换新身份重试）| "
+                    + " 次全部返回 200 空 body（已退避重试多轮）| "
                     + "device_id=" + DeviceRegister.deviceId(), null);
         }
         AppLog.INSTANCE.e(TAG, "videoModel 取流失败 vid=" + vid, lastError);
         throw lastError != null ? lastError : new Exception("HG播放信息为空");
+    }
+
+    /** 取流重试间的小退避：绝不抛中断（吞掉并恢复中断标记），失败不影响主流程。 */
+    private static void sleepQuiet(long ms) {
+        if (ms <= 0) return;
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
