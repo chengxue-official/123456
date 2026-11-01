@@ -110,7 +110,9 @@
             android:letterSpacing="0.06"
             android:includeFontPadding="false" />
 
-        <!-- TV 右上角菜单入口：遥控器没有菜单键时可直接点这里 -->
+        <!-- TV 右上角菜单入口：仅供遥控器指针/触屏点击。
+             必须不可聚焦：焦点一旦落到它身上，确定键会被按钮消费（开菜单而非
+             暂停/继续），左右键会被焦点搜索吃掉（长按快进快退失效）。 -->
         <TextView
             android:id="@+id/btn_menu_top"
             android:layout_width="wrap_content"
@@ -123,8 +125,8 @@
             android:textColor="@color/text_primary"
             android:textSize="14sp"
             android:clickable="true"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
+            android:focusable="false"
+            android:focusableInTouchMode="false"
             android:visibility="gone" />
     </LinearLayout>
 
