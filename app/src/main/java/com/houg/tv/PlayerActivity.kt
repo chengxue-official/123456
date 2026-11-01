@@ -178,11 +178,14 @@ class PlayerActivity : AppCompatActivity() {
     private val streamFallbackKeys = HashSet<String>()
     /**
      * 本集是否为「加密源直连流播」（ClearKey + MediaDrm）。
-     * 为 true 时 MediaItem 带 DRM 配置；任一 DRM/解码环节失败都由 onPlayerError
-     * 回退到「整集下载 + 本地解密」，回退链路与旧版完全一致。
+     *
+     * ⚠️ 2.0.7 起恒为 false：[streamUrlFor] 对加密变体一律返回 null（media3 1.4.1
+     * 的 Mp4Extractor 不支持 CENC sample-table，直连必现
+     * ERROR_CODE_PARSING_CONTAINER_MALFORMED，见该处注释）。仅在未来升级 media3
+     * 后重新放行加密变体时才会为 true，届时 [startPlayback] 的 DRM 分支才会生效。
      */
     private var streamEncrypted = false
-    /** 加密流播用的 CENC-AES-128 密钥（明文流 / 本地文件为 null）。 */
+    /** 加密流播用的 CENC-AES-128 密钥；2.0.7 起恒为 null（加密变体不再直连流播）。 */
     private var streamCencKey: ByteArray? = null
     /**
      * 因「本地缓存文件损坏」已自动删档重下过的 vid。
@@ -1094,11 +1097,20 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     /**
-     * 可边下边播的地址：明文变体直连 CDN；加密变体也先尝试直连（ClearKey +
-     * MediaDrm 流播，密钥随 [streamCencKey] 交给播放器）——整集下载+本地解密
-     * 起播要等全片，流播只等首帧。任一环节失败（DRM 不兼容、CDN 拒直连、
-     * 解码异常）由 onPlayerError 回退下载模式：同一集同一档位已回退过
-     * （[streamFallbackKeys]）时返回 null 强制走下载模式。
+     * 可边下边播的地址：仅**明文**变体直连 CDN；加密变体一律返回 null，
+     * 直接走「整集下载 + 本地解密」（恢复 2.0.5 行为）。
+     *
+     * ⚠️ 2.0.7：加密变体不再尝试 ClearKey + MediaDrm 直连流播。QA 2.0.6 双包
+     * 日志（docs/qa/applog-64bit.txt / applog-32bit.txt）证明必然失败：HG 加密
+     * mp4 是 stbl 层 senc/saio/saiz 的逐样本 CENC（见 [CencMp4Parser]），而
+     * media3 1.4.1 的 Mp4Extractor/AtomParsers 不解析这三个 box，TrackOutput
+     * 拿不到任何样本 CryptoData → 无法逐样本解密；整样本 CTR 加密下首个视频
+     * 样本前 4 字节的 NAL 长度前缀也是密文，readSample 抛 "Invalid NAL length"
+     * → ERROR_CODE_PARSING_CONTAINER_MALFORMED（日志：15:02:45.840 起播 →
+     * 46.179 解码器初始化成功 → 46.448 即 malformed）。于是每集必先「流播失败
+     * → 回退 → 重新取流 → 整集下载」，白多 1~3s 起播，慢网下黑屏可达十几秒。
+     * 未来升级 media3 且其支持 CENC sample-table 后，可在此重新放行加密变体
+     * （届时 [streamEncrypted] 与 [startPlayback] 的 DRM 分支才会生效）。
      */
     private fun streamUrlFor(video: NetClient.VideoModel, vid: String): String? {
         if (streamFallbackKeys.contains(vid + "#" + cacheTag())) return null
@@ -1106,19 +1118,12 @@ class PlayerActivity : AppCompatActivity() {
         streamCencKey = null
         val top = video.variants.firstOrNull()
         if (top != null) {
-            if (top.encrypted) {
-                if (top.cencKey == null) return null // 无密钥的加密变体流播不了，直接走下载
-                streamEncrypted = true
-                streamCencKey = top.cencKey
-            }
+            // 加密变体直连流播在 media3 1.4.1 上必现 MALFORMED（见方法 KDoc），直接走下载
+            if (top.encrypted) return null
             return top.urls.firstOrNull { it.startsWith("http") }
         }
         // 兼容旧结构：没有变体列表时看顶层字段
-        if (video.encrypted) {
-            if (video.cencKey == null) return null
-            streamEncrypted = true
-            streamCencKey = video.cencKey
-        }
+        if (video.encrypted) return null
         return video.urls.firstOrNull { it.startsWith("http") }
     }
 
@@ -1363,9 +1368,12 @@ class PlayerActivity : AppCompatActivity() {
         activeClearFile = if (source.scheme == "file") source.path?.let { File(it) } else null
         val cencKey = streamCencKey
         if (streamingCurrent && streamEncrypted && cencKey != null) {
-            // 加密源直连流播：带上 ClearKey DRM 配置，由 MediaDrm 按 CENC 样本
-            // （senc/saiz/tenc）就地解密，起播只等首帧。
-            // 任一环节不兼容都会在 onPlayerError 里回退整集下载（见该处注释）。
+            // ⚠️ 当前不可达（2.0.7 起 [streamUrlFor] 对加密变体一律返回 null，
+            // streamEncrypted 恒为 false）：media3 1.4.1 的 Mp4Extractor 不支持
+            // stbl 层 senc/saio/saiz 的逐样本 CENC，加密源直连必现
+            // ERROR_CODE_PARSING_CONTAINER_MALFORMED（详见 [streamUrlFor] 注释）。
+            // 保留此分支：升级 media3 并在 [streamUrlFor] 重新放行加密变体后即可启用，
+            // 届时还需在 onPlayerError 里保留「首帧前失败回退整集下载」的兜底。
             val item = MediaItem.Builder()
                 .setUri(source)
                 .setDrmConfiguration(
