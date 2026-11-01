@@ -26,7 +26,6 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.C
-import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.drm.DefaultDrmSessionManager
@@ -1643,9 +1642,9 @@ class PlayerActivity : AppCompatActivity() {
      */
     private fun buildPlayer(): ExoPlayer {
         // 【检验环节3】解码器工厂选择。真机排查「起播即黑/解码失败」时先看这条：
-        // 硬解=MediaCodec 优先且解码器回退已开；软解=SoftwareRenderersFactory。
+        // 硬解=MediaCodec 优先且剔除已知崩溃解码器；软解=SoftwareRenderersFactory。
         AppLog.d("PlayerActivity", "【检验环节3】创建播放器 模式="
-                + if (decoderSoft) "软解" else "硬解(解码器回退已开)")
+                + if (decoderSoft) "软解" else "硬解(已剔除已知崩溃解码器)")
         val builder = ExoPlayer.Builder(this)
             // 内容源工厂：本地缓存走 FileDataSource，明文片源走 OkHttp 边下边播
             .setMediaSourceFactory(DefaultMediaSourceFactory(HgDataSourceFactory()))
@@ -1656,16 +1655,31 @@ class PlayerActivity : AppCompatActivity() {
         if (decoderSoft) {
             builder.setRenderersFactory(SoftwareRenderersFactory(this))
         } else {
-            // HGTV MainActivityPlayer 同款：硬解时开启解码器回退。
-            // 有的 ROM 谎报解码能力——MediaCodecList 里有 video/hevc 解码器，
-            // 但初始化后解这个码流直接失败。setEnableDecoderFallback(true) 让
-            // ExoPlayer 在解码器初始化/解码失败时自动换下一个解码器（含软解），
-            // 而不是立刻黑屏报错，多一层自救（与 onPlayerError 的两级自愈互补）。
-            builder.setRenderersFactory(
-                DefaultRenderersFactory(this).setEnableDecoderFallback(true)
-            )
+            // 硬解：默认解码器优先 + 剔除已知会 SIGABRT 的厂商解码器
+            // （MITV4 的 OMX.amlogic.hevc.decoder.awesome 初始化成功、约 1s 后
+            // 在 ACodec::onOMXEvent 里 CHECK_EQ(getPortFormat) abort——native 崩，
+            // setEnableDecoderFallback / onPlayerError 都拦不住，只能不选它）。
+            logSafeDecoderCandidates()
+            builder.setRenderersFactory(HardwareRenderersFactory(this))
         }
         return builder.build()
+    }
+
+    /**
+     * 打印 HEVC 解码器候选与被剔除项（真机排查「为什么落到软解 / 还崩」时看这条）。
+     * 查询失败不影响播放，直接跳过。
+     */
+    private fun logSafeDecoderCandidates() {
+        try {
+            val all = androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT
+                .getDecoderInfos("video/hevc", false, false)
+            val (safe, dropped) = HardwareRenderersFactory.filterSafe(all)
+            AppLog.d("PlayerActivity", "HEVC 解码器候选="
+                    + safe.joinToString { it.name }
+                    + if (dropped.isEmpty()) "" else " 已剔除=" + dropped.joinToString())
+        } catch (e: Throwable) {
+            AppLog.d("PlayerActivity", "HEVC 解码器候选查询失败: " + (e.message ?: ""))
+        }
     }
 
     /**
