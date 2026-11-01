@@ -18,8 +18,8 @@ android {
         // 适配 Android 5.0（API 21）及以上：HG片源为 HEVC+CENC，需 API 21 起的 HEVC 硬解能力
         minSdk = 21
         targetSdk = 35
-        versionCode = 138
-        versionName = "2.0.6"
+        versionCode = 139
+        versionName = "2.0.7"
         // 原生库只剩 libheifdecoder（封面 HEIC 解码）。32 位包只带 armeabi-v7a，
         // 兼容老电视盒子；64 位包只带 arm64-v8a，供纯 64 位系统安装（部分新机型/
         // 新电视已不支持 32 位应用）。由 abiTarget 属性在打包时选择。
