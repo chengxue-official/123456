@@ -3,6 +3,7 @@ package com.houg.tv.update
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import androidx.core.content.FileProvider
 import com.houg.tv.net.HttpClientProvider
 import com.houg.tv.util.AppLog
@@ -91,6 +92,9 @@ object UpdateChecker {
     private const val RETRY_DELAY_MS = 400L
 
     private const val TAG = "UpdateChecker"
+
+    /** 拉起安装器前的最小合法 APK 体积：小于此值基本可判定为空包/写盘截断的坏包。 */
+    private const val MIN_APK_BYTES = 64 * 1024L
 
     private fun updateUrl(host: String): String {
         val h = host.trimEnd('/')
@@ -402,32 +406,102 @@ object UpdateChecker {
      * 注意：这里**不**检查 canRequestPackageInstalls()——小米等 ROM 上该 API 常年
      * 返回 false（即使「允许安装未知应用」已开），据此拦截会让用户永远装不上。
      * 直接唤起系统安装器，授权页由安装器自行弹出；失败再由调用方给分厂商引导。
+     *
+     * 2026-11-02 电视端兼容性增强（线上反馈「点更新没反应」「解析包错误」）：
+     *  1. 拉起前先校验文件存在且非空——缓存可能被系统清理或写盘截断，否则用户
+     *     只会看到安装器的「解析包错误」，误以为 App 坏了；
+     *  2. content:// 失败后依次回退 ACTION_INSTALL_PACKAGE（API 14+）与
+     *     file://（API 24 以下）——部分电视安装器只认文件路径；
+     *  3. 带上 EXTRA_NOT_UNKNOWN_SOURCE：5.x/6.x ROM 不带会把「未知来源」
+     *     直接判死，既不安装也不给授权入口。
      */
     fun install(context: Context, apk: File): Boolean {
-        val uri: Uri = try {
-            FileProvider.getUriForFile(
-                context, context.packageName + ".fileprovider", apk
-            )
-        } catch (e: Exception) {
-            android.widget.Toast.makeText(
-                context, "安装包路径异常：${e.message ?: ""}", android.widget.Toast.LENGTH_LONG
-            ).show()
+        if (!apk.isFile || apk.length() < MIN_APK_BYTES) {
+            toast(context, "安装包不存在或已损坏，请重新下载")
             return false
         }
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            setDataAndType(uri, "application/vnd.android.package-archive")
-        }
-        return try {
-            context.startActivity(intent)
-            true
+        val mime = "application/vnd.android.package-archive"
+
+        val contentUri: Uri? = try {
+            FileProvider.getUriForFile(context, context.packageName + ".fileprovider", apk)
         } catch (e: Exception) {
-            // 部分盒子无系统安装器，或 ROM 直接拦截；调用方据此给引导
-            android.widget.Toast.makeText(
-                context, "无法启动安装器，请手动安装：$apk", android.widget.Toast.LENGTH_LONG
-            ).show()
-            false
+            AppLog.d(TAG, "FileProvider 取 URI 失败: " + (e.message ?: ""))
+            null
+        }
+
+        // ① 常规入口：ACTION_VIEW + content://（Android 7+ 唯一合法方式）
+        if (contentUri != null) {
+            val view = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(contentUri, mime)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            }
+            if (launch(context, view)) return true
+
+            // ② 兼容入口：部分电视 ROM 只实现了 ACTION_INSTALL_PACKAGE
+            val installPackage = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                setDataAndType(contentUri, mime)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            }
+            if (launch(context, installPackage)) return true
+        }
+
+        // ③ 老系统兜底：API < 24 还能把 file:// 交给别的应用。
+        //    缓存目录在私有区，其它进程读不到，先复制到 App 专属外部目录
+        //    （老系统外部存储世界可读，安装器能直接打开）。
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            val copied = copyToExternalDir(context, apk)
+            if (copied != null) {
+                val i = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(Uri.fromFile(copied), mime)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                }
+                if (launch(context, i)) return true
+            }
+        }
+
+        toast(context, "无法启动安装器，请在电视设置里允许安装未知应用后重试")
+        return false
+    }
+
+    /** 尝试拉起安装器；失败（无 Activity / ROM 拦截）时记日志并返回 false。 */
+    private fun launch(context: Context, intent: Intent): Boolean = try {
+        context.startActivity(intent)
+        true
+    } catch (e: Exception) {
+        AppLog.d(TAG, "拉起安装器失败(" + intent.action + "): "
+                + (e.message ?: e.javaClass.simpleName))
+        false
+    }
+
+    /** API<24 兜底：复制安装包到 App 专属外部目录，返回可 file:// 使用的文件。 */
+    private fun copyToExternalDir(context: Context, apk: File): File? = try {
+        val base = context.getExternalFilesDir(null)
+        if (base == null) {
+            null
+        } else {
+            val dir = File(base, "update").apply { mkdirs() }
+            val target = File(dir, apk.name)
+            if (!target.isFile || target.length() != apk.length()) {
+                apk.inputStream().use { input ->
+                    target.outputStream().use { out -> input.copyTo(out) }
+                }
+            }
+            target
+        }
+    } catch (e: Exception) {
+        AppLog.d(TAG, "复制安装包到外部目录失败: " + (e.message ?: ""))
+        null
+    }
+
+    private fun toast(context: Context, msg: String) {
+        try {
+            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+        } catch (ignored: Exception) {
         }
     }
 }
