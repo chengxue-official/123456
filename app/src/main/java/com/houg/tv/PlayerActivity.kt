@@ -1903,6 +1903,8 @@ class PlayerActivity : AppCompatActivity() {
         updateDecoderLabel()
         // 解码方式影响「软解降档」文案与实时生效的上限（BUG-137：原来要重开菜单才刷新）
         updateQualityLabel()
+        // 切回硬解时倍速不再受限，文案里的「（软解上限 1.5x）」要同步消失（O-06）
+        updateSpeedLabel()
         val label = getString(if (decoderSoft) R.string.menu_decoder_soft else R.string.menu_decoder_hard)
         toast(getString(R.string.menu_decoder_switched, label))
         rebuildPlayer()
