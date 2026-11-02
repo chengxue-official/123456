@@ -301,6 +301,13 @@ class PlayerActivity : AppCompatActivity() {
      * 老盒子/投影仪上硬解 HEVC 常出现花屏、绿边、解码器初始化失败，用户可在播放菜单里切软解救急。
      */
     private var decoderSoft = false
+    /**
+     * 本集实际启用的解码器是否为软件解码（OMX.google.* / c2.android.*）。
+     * 软解期间解码本身就在抢 CPU 与堆，再叠加下一集的下载+重封装，1.3GB 老盒子
+     * 会被直接压到 OOM（线上 Skyworth 9R59 / Android 5.1.1：空闲堆仅 5MB 时
+     * 申请 21MB → 起播失败），故软解期间不预载。
+     */
+    private var softDecoding = false
     private val danmakuFetchedWindows = mutableSetOf<Long>()
     private var lastDanmakuWindow = -1L
     /**
@@ -570,6 +577,10 @@ class PlayerActivity : AppCompatActivity() {
             initializedTimestampMs: Long,
             initializationDurationMs: Long
         ) {
+            // 软解判定：google / software / sw. 前缀都是平台软解码器。
+            // 用于预载开关（软解 + 预载并发会把低内存盒子压到 OOM，见 softDecoding）。
+            val n = decoderName.lowercase()
+            softDecoding = n.contains("google") || n.contains("software") || n.contains("sw.")
             AppLog.d("PlayerActivity", "视频解码器=" + decoderName
                     + " 初始化耗时=" + initializationDurationMs + "ms")
         }
@@ -738,6 +749,14 @@ class PlayerActivity : AppCompatActivity() {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
 
+        // 系统组件与 media3 冲突（YunOS 旧版 Guava，见 systemAudioLibraryBroken）：
+        // 建播放器必崩，先给可读提示，别让用户看到闪退。
+        if (systemAudioLibraryBroken()) {
+            AppLog.e("PlayerActivity",
+                    "系统 Guava 版本过低（缺 ImmutableMap.Builder.buildOrThrow），无法创建播放器", null)
+            showError("本机系统组件与播放器冲突，暂时无法播放。请把电视系统升级到最新版后重试")
+            return
+        }
         player = buildPlayer()
         player!!.setVideoSurfaceView(surfaceView)
         player!!.setAudioAttributes(AudioAttributes.DEFAULT, /*handleAudioFocus=*/true)
@@ -879,6 +898,9 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun playCurrent() {
+        // 播放器创建被系统库冲突拦下时（见 systemAudioLibraryBroken），错误面板已展示，
+        // 这里不再往下走，避免后续对空播放器的调用。
+        if (player == null) return
         if (vidList.isEmpty()) {
             // 没有可播内容：提示而不是 finish()，避免用户看到"莫名其妙退回选集"
             releaseSwitchGuard()
@@ -1012,6 +1034,9 @@ class PlayerActivity : AppCompatActivity() {
                 // 可能抛 OutOfMemoryError（属 Error 不属 Exception）。此前漏接导致
                 // 整个协程崩掉、播放页异常退出。
                 if (gen != playGen) return@launch
+                // 切集/退出时协程被取消会抛 CancellationException（消息 "Job was cancelled"），
+                // 属正常时序而非播放失败（线上日志噪音：起播失败 … | Job was cancelled）。
+                if (e is java.util.concurrent.CancellationException) return@launch
                 AppLog.e("PlayerActivity", "起播失败 vid=$vid", e)
                 hideLoading()
                 currentEpisodeFailed = true
@@ -1310,6 +1335,33 @@ class PlayerActivity : AppCompatActivity() {
             cause = cause.cause
         }
         return false
+    }
+
+    /** 当前还能再分配的 Java 堆字节数（max - 已用）。 */
+    private fun freeHeapBytes(): Long {
+        val rt = Runtime.getRuntime()
+        return rt.maxMemory() - rt.totalMemory() + rt.freeMemory()
+    }
+
+    /**
+     * 系统自带的旧版 Guava 是否会盖掉 App 内的新版。
+     *
+     * 典型机型：Tmall MagicBox（YunOS，Android 5.1）——`/system/framework/libyunosfw.jar`
+     * 里有一份旧 Guava，BootClassLoader 优先于 App 的 PathClassLoader，于是 media3 1.4.1
+     * 的 `AudioCapabilities.<clinit>` 调用 Guava 31 才有的 `ImmutableMap.Builder.buildOrThrow()`
+     * 时抛 `NoSuchMethodError`，进程在起播瞬间直接崩（线上日志堆栈指向
+     * AudioCapabilities.java:89 → DefaultRenderersFactory.buildAudioSink）。
+     *
+     * 这是系统库冲突，App 覆盖不了，只能在建播放器之前识别并给可读提示。
+     * 探测方式：按运行时类加载顺序解析该类，看有没有 buildOrThrow（有 = 正常）。
+     */
+    private fun systemAudioLibraryBroken(): Boolean = try {
+        Class.forName("com.google.common.collect.ImmutableMap\$Builder").getMethod("buildOrThrow")
+        false
+    } catch (e: NoSuchMethodException) {
+        true
+    } catch (e: Throwable) {
+        false
     }
 
     /** 媒体下载异常是否属瞬态可重试（429/5xx/网络瞬断）；403/404 等永久错误不算。 */
@@ -1917,6 +1969,15 @@ class PlayerActivity : AppCompatActivity() {
         // 当前集在边下边播：预加载下一集会抢同一根带宽，把正在播的流拖到缓冲。
         // 流播起播本身只要一两秒，预加载收益不值得这个代价。
         if (streamingCurrent) return
+        // 软解时解码本身已在抢 CPU 与堆：再叠加下一集的下载+重封装，1.3GB 老盒子
+        // 实测直接 OOM（Skyworth 9R59 / Android 5.1.1，空闲堆仅 5MB 时申请 21MB）。
+        if (softDecoding) return
+        // 堆余量不足也不预取：重封装瞬时峰值要吃几十 MB，先保住正在播的这一集。
+        if (freeHeapBytes() < PREFETCH_MIN_FREE_HEAP_BYTES) {
+            AppLog.d("PlayerActivity", "堆余量不足，跳过预加载 free="
+                    + freeHeapBytes() / 1024 / 1024 + "MB")
+            return
+        }
         // 媒体 CDN 限流冷却中：不发起任何预加载，等窗口过去
         if (System.currentTimeMillis() < mediaCooldownUntil) return
         if (mediaCooldownActive) {
@@ -3188,6 +3249,13 @@ class PlayerActivity : AppCompatActivity() {
          * 旧实现是永久拉黑，一次网络瞬断就让整部剧后续集数再无缓存。
          */
         private const val PREFETCH_FAIL_BACKOFF_MS = 60_000L
+
+        /**
+         * 发起预加载前要求的最小空闲堆（字节）。
+         * 低于它说明当前集已把堆吃得差不多（软解高分辨率尤甚），此时再起
+         * 下载+重封装极易 OOM（线上 1.3GB 盒子空闲堆仅 5MB 时申请 21MB）。
+         */
+        private const val PREFETCH_MIN_FREE_HEAP_BYTES = 48L * 1024 * 1024
 
         /**
          * 媒体 CDN 限流（HTTP 429）后的预加载冷却时长。
