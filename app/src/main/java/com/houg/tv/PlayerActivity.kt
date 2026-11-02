@@ -569,6 +569,12 @@ class PlayerActivity : AppCompatActivity() {
     /** 上次记录「画面渲染落后」日志的时间（见 [frameAnalytics] 的偏移回调）。 */
     private var lastDriftLogAt = 0L
 
+    /** 软解降速提示是否已经弹过（每次进入播放器只提醒一次，不每集都弹）。 */
+    private var softSpeedCapNotified = false
+
+    /** 最近一次真正下发给播放器的倍速，用于解码方式切换后重新对齐。 */
+    private var lastAppliedSpeed = -1f
+
     /**
      * 帧率/解码诊断：记录实际启用的解码器与会话内丢帧。
      * 「感觉帧数不高」时先看这两条——解码器是硬解还是 c2.android 软解、有没有持续丢帧。
@@ -587,6 +593,22 @@ class PlayerActivity : AppCompatActivity() {
             AppLog.d("PlayerActivity", "视频解码器=" + decoderName
                     + " 初始化耗时=" + initializationDurationMs + "ms"
                     + if (softDecoding) "（软解：解码性能不足时会掉帧，画面可能落后声音）" else "")
+            // 解码方式确定后重新对齐倍速：软解要收回 1.5x；从软解切回硬解则恢复用户选的档
+            // （用户上次可能停在 2x，硬解能扛住）。
+            val target = effectiveSpeed()
+            if (target != lastAppliedSpeed) {
+                val capped = softDecoding && SPEEDS[speedIndex] > SOFT_DECODE_MAX_SPEED
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    applySpeed()
+                    updateSpeedLabel()
+                    if (capped && !softSpeedCapNotified) {
+                        softSpeedCapNotified = true
+                        toast("本机使用软解，倍速最高 " + SOFT_DECODE_MAX_SPEED
+                                + "x（再快画面会落后声音）")
+                    }
+                }
+            }
         }
 
         /**
@@ -604,7 +626,7 @@ class PlayerActivity : AppCompatActivity() {
             if (now - lastDriftLogAt < 10_000L) return
             lastDriftLogAt = now
             AppLog.d("PlayerActivity", "画面落后声音 累计=" + (totalProcessingOffsetUs / 1000)
-                    + "ms 帧数=" + frameCount + " 软解=" + softDecoding)
+                    + "ms 帧数=" + frameCount + " 软解=" + softDecoding + playbackTag())
         }
 
         override fun onDroppedVideoFrames(
@@ -616,7 +638,7 @@ class PlayerActivity : AppCompatActivity() {
             if (now - lastDropLogAt < 5000L) return
             lastDropLogAt = now
             AppLog.d("PlayerActivity", "丢帧 dropped=" + droppedFrames
-                    + " elapsed=" + elapsedMs + "ms")
+                    + " elapsed=" + elapsedMs + "ms 软解=" + softDecoding + playbackTag())
         }
     }
 
@@ -1862,17 +1884,46 @@ class PlayerActivity : AppCompatActivity() {
         updateSpeedLabel()
         applySpeed()
         updateEpisodeInfo()
-        toast(getString(R.string.menu_speed) + "：" + SPEEDS[speedIndex].toString() + "x")
+        toast(getString(R.string.menu_speed) + "：" + SPEEDS[speedIndex].toString() + "x"
+                + if (isSpeedCapped()) {
+                    "（本机软解，实际按 " + SOFT_DECODE_MAX_SPEED + "x 播放）"
+                } else "")
     }
 
-    /** 将当前倍速应用到播放器与弹幕时钟。 */
+    /**
+     * 实际生效的倍速：软解时封顶 [SOFT_DECODE_MAX_SPEED]。
+     *
+     * 为什么：音画同步由音频时钟主导，解码喂不上帧时播放器只能丢帧，
+     * 表现就是「声音正常、画面越来越慢」。1080p HEVC 软解在低端电视上
+     * 1x 都已经每秒丢 20~35 帧（2026-11-02 Konka T963 线上日志），
+     * 2x 只会更糟，所以软解时不给到 1.5x 以上。
+     */
+    private fun effectiveSpeed(): Float {
+        val requested = SPEEDS[speedIndex]
+        val soft = softDecoding || decoderSoft
+        return if (soft && requested > SOFT_DECODE_MAX_SPEED) SOFT_DECODE_MAX_SPEED else requested
+    }
+
+    /** 用户选的倍速是否被软解上限压低了。 */
+    private fun isSpeedCapped(): Boolean = effectiveSpeed() < SPEEDS[speedIndex]
+
+    /** 诊断日志用的当前状态（实际倍速 + 实际清晰度）。 */
+    private fun playbackTag(): String {
+        val quality = if (currentVariantHeight > 0) currentVariantHeight.toString() + "P" else "?"
+        return " 倍速=" + effectiveSpeed() + "x 清晰度=" + quality
+    }
+
+    /** 将当前倍速应用到播放器与弹幕时钟（软解时自动降到安全值）。 */
     private fun applySpeed() {
-        player?.setPlaybackParameters(PlaybackParameters(SPEEDS[speedIndex]))
-        danmakuView.setRate(SPEEDS[speedIndex])
+        val speed = effectiveSpeed()
+        lastAppliedSpeed = speed
+        player?.setPlaybackParameters(PlaybackParameters(speed))
+        danmakuView.setRate(speed)
     }
 
     private fun updateSpeedLabel() {
-        menuSpeed.text = getString(R.string.menu_speed) + "：" + SPEEDS[speedIndex].toString() + "x"
+        val cap = if (isSpeedCapped()) "（软解上限 " + SOFT_DECODE_MAX_SPEED + "x）" else ""
+        menuSpeed.text = getString(R.string.menu_speed) + "：" + SPEEDS[speedIndex].toString() + "x" + cap
     }
 
     /** 切换弹幕开关并持久化。 */
@@ -3295,6 +3346,12 @@ class PlayerActivity : AppCompatActivity() {
 
         /** 倍速档位 */
         val SPEEDS = floatArrayOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
+
+        /**
+         * 软解时的倍速上限。软解喂不上帧时 ExoPlayer 只能丢帧，
+         * 表现为「声音正常、画面越来越慢」（用户报的音画不同步）。
+         */
+        const val SOFT_DECODE_MAX_SPEED = 1.5f
 
         /** 画幅模式：适应（默认，保持比例）/ 拉伸 / 原始 / 填充 */
         const val ASPECT_FIT = 0
