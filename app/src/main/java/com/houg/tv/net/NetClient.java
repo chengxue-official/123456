@@ -79,6 +79,15 @@ public final class NetClient {
                     + "请检查电视网络后点下方「重试」（遥控器按确定键）再播一次；"
                     + "若反复出现，等几分钟再试通常可恢复。";
 
+    /**
+     * 该集只下发了 AV1(bytevc2)，且本机没有 AV1 硬解：确实没有可播档位。
+     *
+     * <p>同时作为「换一次重取」的判定依据——服务端下发编码集偶发随节点变化，
+     * 重取一次可能拿到 HEVC；仍只有 AV1 才把这个结论交给用户。
+     */
+    private static final String AV1_ONLY_MSG =
+            "该集片源只有 AV1（bytevc2）编码，本机无法解码，请换一集或反馈给开发者";
+
     private static final Charset UTF8 = Charset.forName("UTF-8");
 
     private static final MediaType JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
@@ -574,11 +583,18 @@ public final class NetClient {
                     }
                     return b.height - a.height;
                 }
-                int ra = isHevc(a.codec) ? 1 : 0;
-                int rb = isHevc(b.codec) ? 1 : 0;
-                return ra - rb;
+                // 同高度：H.264 → HEVC → AV1（AV1 只在设备有硬解时才会留在列表里）
+                return codecRank(a.codec) - codecRank(b.codec);
             }
         });
+    }
+
+    /** 同清晰度下的编码优先级：H.264(0) 兼容性最好 → HEVC(1) → AV1(2)。 */
+    private static int codecRank(String codec) {
+        String c = codec == null ? "" : codec.toLowerCase();
+        if (c.contains("bytevc2") || c.contains("bvc2")) return 2;
+        if (isHevc(c)) return 1;
+        return 0;
     }
 
     /** codec_type 是否为 HEVC（HG下发的 bytevc1 即 H.265）。 */
@@ -640,6 +656,47 @@ public final class NetClient {
         }
         AppLog.INSTANCE.d(TAG, "设备 HEVC 硬解能力=" + ok);
         hevcSupportedCache = ok;
+        return ok;
+    }
+
+    /**
+     * 设备是否具备 AV1(video/av01) 硬解能力（结果缓存）。
+     *
+     * <p>为什么要探测：旧实现对 bytevc2(AV1) 是**无条件剔除**的——电视端确实大多
+     * 没有 AV1 解码器，但 2022 年后的部分 SoC（Amlogic S905X4 / 联发科 MT9xxx 等）
+     * 已经带 AV1 硬解。遇到「该集服务端只下发 AV1」的片源时，这些机器本可以直接播，
+     * 却被我们一律跳过，报「本机无法解码」——是假故障。
+     *
+     * <p>判定口径与 {@link #deviceSupportsHevc()} 一致：只认硬解，软解 AV1 播
+     * 1080p 在电视 SoC 上同样扛不住，不计入。
+     */
+    private static Boolean av1SupportedCache = null;
+
+    private static synchronized boolean deviceSupportsAv1() {
+        if (av1SupportedCache != null) return av1SupportedCache;
+        boolean ok = false;
+        try {
+            for (MediaCodecInfo info : new MediaCodecList(MediaCodecList.REGULAR_CODECS)
+                    .getCodecInfos()) {
+                if (info.isEncoder()) continue;
+                String name = info.getName().toLowerCase();
+                if (name.contains("google") || name.contains("software")
+                        || name.contains("sw.") || name.contains("ffmpeg")) {
+                    continue; // 软解，不计入
+                }
+                for (String type : info.getSupportedTypes()) {
+                    if ("video/av01".equalsIgnoreCase(type)) {
+                        ok = true;
+                        break;
+                    }
+                }
+                if (ok) break;
+            }
+        } catch (Throwable t) {
+            ok = false;
+        }
+        AppLog.INSTANCE.d(TAG, "设备 AV1 硬解能力=" + ok);
+        av1SupportedCache = ok;
         return ok;
     }
 
@@ -1798,19 +1855,35 @@ public final class NetClient {
         // 空 body / 超时）都会被兜底那句「该集未开放免费观看」误导成版权限制
         //（模拟器实测：第 3→4 集连播正因此弹提示，BUG-128 复盘）。
         // 本项目口径是全剧集免费，兜底链只剩反作用；失败直接把 App 通道的真实原因上抛。
+        Exception appErr;
         try {
             return appVideoModel(vid, maxHeight, appBlocked);
-        } catch (Exception appErr) {
-            AppLog.INSTANCE.e(TAG, "App 取流失败 vid=" + vid, appErr);
-            if (appBlocked.get()) {
-                // App 通道被「200 空 body」全拦 → 本机设备身份问题（非该集版权限制），
-                // 文案指引用户自救（UI 按该文案显示「重试」= 换新身份，BUG-114）。
-                throw new Exception(DEVICE_IDENTITY_FAILED_MSG, appErr);
-            }
-            // 其余错误（网络异常 / 密钥不可用 / 只有 AV1 / 播放信息为空…）原样上抛，
-            // 用户看到的与日志里的一致，不再被任何猜测性文案覆盖。
-            throw appErr;
+        } catch (Exception first) {
+            appErr = first;
         }
+        // 只有 AV1 档时换一次重取：服务端下发的编码集偶发随 CDN 节点变化，
+        // 换一个节点可能拿到 HEVC；仍只有 AV1 才把结论交给用户（不同节点重取
+        // 不涉及身份，不需要重置身份）。
+        if (!appBlocked.get() && AV1_ONLY_MSG.equals(appErr.getMessage())) {
+            AppLog.INSTANCE.d(TAG, "该集只下发 AV1，换节点重取一次 vid=" + vid);
+            try {
+                Thread.sleep(600L);
+                return appVideoModel(vid, maxHeight, appBlocked);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            } catch (Exception retryErr) {
+                appErr = retryErr;
+            }
+        }
+        AppLog.INSTANCE.e(TAG, "App 取流失败 vid=" + vid, appErr);
+        if (appBlocked.get()) {
+            // App 通道被「200 空 body」全拦 → 本机设备身份问题（非该集版权限制），
+            // 文案指引用户自救（UI 按该文案显示「重试」= 换新身份，BUG-114）。
+            throw new Exception(DEVICE_IDENTITY_FAILED_MSG, appErr);
+        }
+        // 其余错误（网络异常 / 密钥不可用 / 只有 AV1 / 播放信息为空…）原样上抛，
+        // 用户看到的与日志里的一致，不再被任何猜测性文案覆盖。
+        throw appErr;
     }
 
     private VideoModel appVideoModel(String vid, int maxHeight, AtomicBoolean blockedOut) throws Exception {
@@ -1827,19 +1900,22 @@ public final class NetClient {
             AppLog.INSTANCE.e(TAG, "fallback_api 取流失败，回退 video_model 直读", e);
         }
 
-        // 收集非 AV1 变体（保留 h264 + bytevc1/HEVC），再按设备解码能力排序选择。
-        // 旧逻辑注释写的「只收集 bytevc1」与实现不符：实际只跳过 bytevc2(AV1)。
+        // 收集可播变体（h264 / bytevc1/HEVC，设备支持 AV1 时再含 bytevc2），
+        // 再按设备解码能力排序选择。
+        // 2026-11-01：bytevc2 由「无条件剔除」改为「设备有 AV1 硬解才保留」——
+        // 只下发 AV1 的剧集在有 AV1 硬解的机器上本就能播。
         List<Variant> variants = new ArrayList<>();
         Exception keyErr = null;
         // 【检验环节1】直读路径同样记录原始档位（fallback 失败回退到这里时能看到全貌）
         StringBuilder rawDesc = new StringBuilder();
         int skippedBvc2 = 0;
+        final boolean av1Ok = deviceSupportsAv1();
         for (JSONObject v : videoListVariants(model)) {
             JSONObject meta = v.optJSONObject("video_meta");
             String codec = meta == null ? "" : meta.optString("codec_type", "").toLowerCase();
             rawDesc.append(' ').append(codec.isEmpty() ? "?" : codec).append('@')
                     .append(definitionHeight(meta));
-            if (codec.contains("bytevc2")) {
+            if (codec.contains("bytevc2") && !av1Ok) {
                 skippedBvc2++;
                 continue;
             }
@@ -1892,7 +1968,7 @@ public final class NetClient {
             if (keyErr != null) {
                 throw new Exception("HG媒体密钥不可用（片源解密失败），请换一集或稍后再试");
             }
-            throw new Exception("该集片源只有 AV1（bytevc2）编码，本机无法解码，请换一集或反馈给开发者");
+            throw new Exception(AV1_ONLY_MSG);
         }
         AppLog.INSTANCE.d(TAG, "【检验环节1】video_model 直读原始下发:" + rawDesc
                 + (skippedBvc2 > 0 ? " | bytevc2 剔除 " + skippedBvc2 + " 档" : ""));
@@ -1943,6 +2019,7 @@ public final class NetClient {
         // 真机排查「某集播不了」先看这条：资源到底给了什么、剔完剩什么。
         StringBuilder rawDesc = new StringBuilder();
         int skippedBvc2 = 0;
+        final boolean av1Ok = deviceSupportsAv1();
         for (java.util.Iterator<String> kit = videoList.keys(); kit.hasNext();) {
             String key = kit.next();
             JSONObject v = videoList.optJSONObject(key);
@@ -1950,8 +2027,9 @@ public final class NetClient {
             String codec = v.optString("codec_type", "").toLowerCase();
             rawDesc.append(' ').append(key).append('=').append(codec).append('@')
                     .append(playbackQuality(v, key));
-            // AV1（bytevc2）电视端普遍不支持，直接跳过
-            if ("bytevc2".equals(codec) || "bvc2".equals(codec)) {
+            // AV1（bytevc2）：设备没有 AV1 硬解才跳过（电视端多数解不了；
+            // 但带 AV1 硬解的 SoC 上这类「只下发 AV1」的集本就能播）
+            if (("bytevc2".equals(codec) || "bvc2".equals(codec)) && !av1Ok) {
                 skippedBvc2++;
                 continue;
             }
@@ -1986,7 +2064,11 @@ public final class NetClient {
         AppLog.INSTANCE.d(TAG, "【检验环节1】fallback 原始下发 " + videoList.length()
                 + " 档:" + rawDesc + (skippedBvc2 > 0
                 ? " | bytevc2 剔除 " + skippedBvc2 + " 档" : ""));
-        if (variants.isEmpty()) throw new Exception("没有电视可播放的清晰度");
+        // 只剩 AV1 且本机没有 AV1 硬解时给准确结论（服务端确实没下发别的档位）
+        if (variants.isEmpty()) {
+            throw new Exception(skippedBvc2 > 0 && !av1Ok
+                    ? AV1_ONLY_MSG : "没有电视可播放的清晰度");
+        }
 
         sortVariantsForDevice(variants);
 
