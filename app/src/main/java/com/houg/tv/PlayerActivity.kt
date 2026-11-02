@@ -605,6 +605,9 @@ class PlayerActivity : AppCompatActivity() {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     applySpeed()
                     updateSpeedLabel()
+                    // 自动识别软解后，清晰度文案也要立刻带出「（软解降档）」，
+                    // 不能等用户下次打开菜单（BUG-137）
+                    updateQualityLabel()
                     if (capped && !softSpeedCapNotified) {
                         softSpeedCapNotified = true
                         toast("本机使用软解，倍速最高 " + SOFT_DECODE_MAX_SPEED
@@ -1893,7 +1896,13 @@ class PlayerActivity : AppCompatActivity() {
     private fun cycleDecoder() {
         decoderSoft = !decoderSoft
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(PREF_DECODER_SOFT, decoderSoft).apply()
+        // 解码方式已换，上一集对「软解/硬解」的判定不再成立。切回硬解时必须立刻清掉，
+        // 否则取流上限与缓存标记仍按软解降档走：命中 _720s 缓存、播 720P 而不重新取流
+        // （BUG-136）。切到软解时清掉也无碍——decoderSoft 已让降档生效。
+        softDecoding = false
         updateDecoderLabel()
+        // 解码方式影响「软解降档」文案与实时生效的上限（BUG-137：原来要重开菜单才刷新）
+        updateQualityLabel()
         val label = getString(if (decoderSoft) R.string.menu_decoder_soft else R.string.menu_decoder_hard)
         toast(getString(R.string.menu_decoder_switched, label))
         rebuildPlayer()
