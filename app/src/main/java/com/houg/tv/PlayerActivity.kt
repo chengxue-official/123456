@@ -1046,8 +1046,15 @@ class PlayerActivity : AppCompatActivity() {
                     startPlayback(Uri.fromFile(cached))
                     return@launch
                 }
+                val limit = maxVariantHeight()
+                if (softCapActive()) {
+                    AppLog.d("PlayerActivity", "软解降档：取流上限="
+                            + (if (limit > 0) limit.toString() + "P" else "不限")
+                            + " 依据=" + (if (decoderSoft) "手动软解" else "本集解码器为软解")
+                            + " vid=" + vid)
+                }
                 val video = withContext(Dispatchers.IO) {
-                    App.netClient.videoModel(vid, maxVariantHeight())
+                    App.netClient.videoModel(vid, limit)
                 }
                 if (gen != playGen) return@launch
                 // 记录服务端实际给出的档位（服务端可能没有所请求档，会回退到最接近的）
@@ -1058,7 +1065,7 @@ class PlayerActivity : AppCompatActivity() {
                 availableHeights = video.variants.map { it.height }.filter { it > 0 }.toSet()
                 // 【检验环节2】本集最终可用档位（已过滤 bytevc2/无 HEVC 变体）。
                 // 清晰度菜单只会出现这些档；若这里为空说明服务端没给可播资源。
-                AppLog.d("PlayerActivity", "【检验环节2】取流 vid=$vid 上限=" + maxVariantHeight()
+                AppLog.d("PlayerActivity", "【检验环节2】取流 vid=$vid 上限=" + limit
                         + "P 可用档=" + availableHeights.sortedDescending().joinToString("/") + "P"
                         + " 选中=" + video.height + "P codec=" + video.codec)
                 // 明文片源：直接边下边播，起播只等首帧（不再等整集下载完）
@@ -1127,10 +1134,35 @@ class PlayerActivity : AppCompatActivity() {
      * 「自动」沿用设备能力判定（低端设备压 720，见 [deviceCapHeight]）；
      * 其余档位取用户显式选择的上限。传给 [NetClient.videoModel] 后由服务端
      * 变体列表里挑「不超过上限的最优档」。
+     *
+     * **软解时自动降一档**（见 [softCapActive]）：软解喂不上帧是「音画不同步 / 画面卡顿」
+     * 的主因（2026-11-02 Konka T963 线上日志：1080p HEVC 软解每 2~3 秒丢 50~80 帧），
+     * 降一档可把解码像素量减半，是黑盒（无法换解码器）时唯一有效的对冲手段。
+     * 硬解不受影响。
      */
     private fun maxVariantHeight(): Int {
+        val base = normalMaxHeight()
+        if (!softCapActive()) return base
+        // 自动档/原画没有显式上限：按 1080 为基准降一档到 720（不能拿「本集已取到的高度」
+        // 当基准——那样降档上限会跟着结果浮动，兼容资源判定也会自相矛盾）。
+        val from = if (base > 0) base else 1080
+        return softTierDown(from)
+    }
+
+    /** 未经软解降档的常规上限，语义与旧版一致。 */
+    private fun normalMaxHeight(): Int {
         val mode = QUALITY_MODES[qualityIndex]
         return if (mode.capHeight < 0) deviceCapHeight else mode.capHeight
+    }
+
+    /** 是否处于软解（用户手动切软解，或本集解码器已被判定为软解）。 */
+    private fun softCapActive(): Boolean = decoderSoft || softDecoding
+
+    /** 软解降档幅度：1080→720、720→480，再低不降（480 以下已没有算力收益）。 */
+    private fun softTierDown(height: Int): Int = when {
+        height >= 1080 -> 720
+        height >= 720 -> 480
+        else -> height
     }
 
     /** 设备能力上限：运行期恒定，只判定一次（isLowEndDevice 会读 /proc/meminfo）。 */
@@ -1146,12 +1178,20 @@ class PlayerActivity : AppCompatActivity() {
      * 明文缓存文件的档位标记。**文件名必须带档位**，否则切换清晰度后会误命中
      * 其它档位遗留的旧缓存——用户以为切了 1080P 实际仍在播 720P。
      */
-    private fun cacheTag(): String = when (QUALITY_MODES[qualityIndex]) {
-        QualityMode.AUTO -> if (deviceCapHeight > 0) "auto720" else "auto"
-        QualityMode.P480 -> "480"
-        QualityMode.P720 -> "720"
-        QualityMode.P1080 -> "1080"
-        QualityMode.ORIGIN -> "full"
+    private fun cacheTag(): String {
+        val mode = QUALITY_MODES[qualityIndex]
+        val base = when (mode) {
+            QualityMode.AUTO -> if (deviceCapHeight > 0) "auto720" else "auto"
+            QualityMode.P480 -> "480"
+            QualityMode.P720 -> "720"
+            QualityMode.P1080 -> "1080"
+            QualityMode.ORIGIN -> "full"
+        }
+        if (!softCapActive()) return base
+        // 软解降档后的文件与实际内容不一致时不能复用旧档缓存（否则降档形同虚设），
+        // 标记里带上实际请求上限；AUTO 的基准随本集高度浮动，同样必须带数值。
+        val cap = maxVariantHeight()
+        return base + (if (cap > 0) "_" + cap + "s" else "s")
     }
 
     /** 明文缓存文件（路径含档位标记，切档后自然不复用旧档文件）。 */
@@ -1698,16 +1738,17 @@ class PlayerActivity : AppCompatActivity() {
      */
     private fun isCompatFallback(): Boolean {
         if (currentVariantHeight <= 0) return false
-        val cap = QUALITY_MODES[qualityIndex].capHeight
-        val limit = if (cap < 0) deviceCapHeight else cap
+        // 软解降档后按降档上限比较：请求 720 却只能给 1080 时，同样属于兼容资源
+        val limit = maxVariantHeight()
         return limit in 1 until currentVariantHeight
     }
 
     /** 更新清晰度菜单文案为「清晰度：档位名(+实际档)」。 */
     private fun updateQualityLabel() {
         val label = getString(QUALITY_MODES[qualityIndex].labelRes)
+        val soft = if (softCapActive()) "（软解降档）" else ""
         val actual = if (currentVariantHeight > 0) "（当前 " + currentVariantHeight + "P）" else ""
-        menuQuality.text = getString(R.string.menu_quality) + "：" + label + actual
+        menuQuality.text = getString(R.string.menu_quality) + "：" + label + soft + actual
     }
 
     /**
