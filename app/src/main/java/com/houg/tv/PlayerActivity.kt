@@ -587,9 +587,12 @@ class PlayerActivity : AppCompatActivity() {
             initializationDurationMs: Long
         ) {
             // 软解判定：google / software / sw. 前缀都是平台软解码器。
+            // API≥29 的 AOSP 软解叫 c2.android.*（部分机型 c2.google.*），
+            // 不含上面的关键字，漏判会让软解期倍速不封顶、预载不关（BUG-135）。
             // 用于预载开关（软解 + 预载并发会把低内存盒子压到 OOM，见 softDecoding）。
             val n = decoderName.lowercase()
             softDecoding = n.contains("google") || n.contains("software") || n.contains("sw.")
+                    || n.contains("c2.android") || n.contains("c2.google")
             AppLog.d("PlayerActivity", "视频解码器=" + decoderName
                     + " 初始化耗时=" + initializationDurationMs + "ms"
                     + if (softDecoding) "（软解：解码性能不足时会掉帧，画面可能落后声音）" else "")
@@ -612,20 +615,21 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         /**
-         * 画面渲染累计落后时长。持续增长到半秒以上即「画面落后声音」——
-         * 用户报「音画不同步」时，这条与 [onDroppedVideoFrames] 一起判断是
-         * 解码跟不上（软解/低端机），还是容器时间轴本身有问题。
+         * 画面渲染累计偏移。media3 的符号约定：**正值 = 帧提前**（距离目标呈现时间还有多久），
+         * **负值 = 帧已迟到**（BUG-134，见 `VideoFrameReleaseControl` 的 earlyUs 注释）。
+         * 只有负偏移的绝对值持续超过半秒，才是「画面落后声音」——用户报不同步时，
+         * 这条与 [onDroppedVideoFrames] 一起判断是解码跟不上还是容器时间轴有问题。
          */
         override fun onVideoFrameProcessingOffset(
             eventTime: AnalyticsListener.EventTime,
             totalProcessingOffsetUs: Long,
             frameCount: Int
         ) {
-            if (totalProcessingOffsetUs < 500_000L) return // 半秒内的抖动属正常
+            if (totalProcessingOffsetUs > -500_000L) return // 落后不足半秒（正值=提前，直接忽略）
             val now = System.currentTimeMillis()
             if (now - lastDriftLogAt < 10_000L) return
             lastDriftLogAt = now
-            AppLog.d("PlayerActivity", "画面落后声音 累计=" + (totalProcessingOffsetUs / 1000)
+            AppLog.d("PlayerActivity", "画面落后声音 累计=" + (-totalProcessingOffsetUs / 1000)
                     + "ms 帧数=" + frameCount + " 软解=" + softDecoding + playbackTag())
         }
 
