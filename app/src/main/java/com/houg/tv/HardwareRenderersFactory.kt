@@ -1,6 +1,7 @@
 package com.houg.tv
 
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.Renderer
@@ -59,8 +60,16 @@ class HardwareRenderersFactory(context: Context) : DefaultRenderersFactory(conte
          * 已知会 native abort 的解码器：Amlogic 的 `awesome` 系列。
          * 不区分 hevc/avc——两者是同一套实现，且 disableHevc 回退到 H.264 后
          * AVC 的 awesome 同样会踩上。
+         *
+         * 只在 Android 6（API 23）及以下剔除：崩溃取证全部来自
+         * MiTV4-ANSM0 / Android 6.0.1（framework ACodec 的老实现 + 老固件）。
+         * API≥24 的 Amlogic 机型（如 Konka T963 / Android 9）继续用硬解——
+         * 这些机器上 awesome 往往是**唯一**的 HEVC 硬解，一旦剔除就落到软解，
+         * 1080p HEVC 软解在 32 位 2GB 电视上每 2~3 秒丢 50~80 帧，
+         * 画面严重落后声音（用户反馈的「音画不同步」，2026-11-02 线上日志）。
          */
         fun isKnownCrashing(name: String): Boolean {
+            if (Build.VERSION.SDK_INT > Build.VERSION_CODES.M) return false
             val n = name.lowercase()
             return n.contains("amlogic") && n.contains("awesome")
         }

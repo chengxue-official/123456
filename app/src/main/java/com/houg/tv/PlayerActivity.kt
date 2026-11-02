@@ -566,6 +566,9 @@ class PlayerActivity : AppCompatActivity() {
     /** 上次记录丢帧日志的时间：进度回调很密集，限流避免日志被刷爆。 */
     private var lastDropLogAt = 0L
 
+    /** 上次记录「画面渲染落后」日志的时间（见 [frameAnalytics] 的偏移回调）。 */
+    private var lastDriftLogAt = 0L
+
     /**
      * 帧率/解码诊断：记录实际启用的解码器与会话内丢帧。
      * 「感觉帧数不高」时先看这两条——解码器是硬解还是 c2.android 软解、有没有持续丢帧。
@@ -582,7 +585,26 @@ class PlayerActivity : AppCompatActivity() {
             val n = decoderName.lowercase()
             softDecoding = n.contains("google") || n.contains("software") || n.contains("sw.")
             AppLog.d("PlayerActivity", "视频解码器=" + decoderName
-                    + " 初始化耗时=" + initializationDurationMs + "ms")
+                    + " 初始化耗时=" + initializationDurationMs + "ms"
+                    + if (softDecoding) "（软解：解码性能不足时会掉帧，画面可能落后声音）" else "")
+        }
+
+        /**
+         * 画面渲染累计落后时长。持续增长到半秒以上即「画面落后声音」——
+         * 用户报「音画不同步」时，这条与 [onDroppedVideoFrames] 一起判断是
+         * 解码跟不上（软解/低端机），还是容器时间轴本身有问题。
+         */
+        override fun onVideoFrameProcessingOffset(
+            eventTime: AnalyticsListener.EventTime,
+            totalProcessingOffsetUs: Long,
+            frameCount: Int
+        ) {
+            if (totalProcessingOffsetUs < 500_000L) return // 半秒内的抖动属正常
+            val now = System.currentTimeMillis()
+            if (now - lastDriftLogAt < 10_000L) return
+            lastDriftLogAt = now
+            AppLog.d("PlayerActivity", "画面落后声音 累计=" + (totalProcessingOffsetUs / 1000)
+                    + "ms 帧数=" + frameCount + " 软解=" + softDecoding)
         }
 
         override fun onDroppedVideoFrames(
