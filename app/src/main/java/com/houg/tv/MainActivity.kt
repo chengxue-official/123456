@@ -437,9 +437,17 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    /** 首页返回键：弹确认退出，避免误触直接退出软件 */
+    /**
+     * 首页返回键：列表已往下翻过时先滚回顶部（顶部有搜索入口），
+     * 已在顶部时再按才弹退出确认，避免误触直接退出。
+     */
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
+            val lm = recycler.layoutManager as? GridLayoutManager
+            if (lm != null && lm.findFirstVisibleItemPosition() > 0) {
+                recycler.scrollToPosition(0)
+                return true
+            }
             showExitConfirm()
             return true
         }
