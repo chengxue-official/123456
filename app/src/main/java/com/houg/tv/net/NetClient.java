@@ -38,9 +38,12 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
@@ -285,6 +288,62 @@ public final class NetClient {
      * 与搜索/详情用的旧 X-Gorgon 是两套：播放接口 2026-10-14 起只认完整签名链。
      */
     private final PlaybackSigner playbackSigner = new PlaybackSigner();
+
+    /* ---- 播放模型缓存（首播加速，2026-11-03） ---- */
+
+    /**
+     * video_model 原始响应的进程内缓存有效期。
+     *
+     * <p>首播慢的根因是播放接口的「200 空 body 墙」：同一 vid 实测要空 6~24 次才拿到
+     * 数据，叠加退避合计约 14 秒，且这段耗时与清晰度选择完全无关。详情页预热一次后
+     * 播放页直接命中，起播只剩 fallback_api 一跳 + 下载重封装（TCL 真机实测重封装 2.2s）。
+     * 取流地址带时效，不宜久留——5 分钟足够覆盖「进详情页 → 点播放」。
+     */
+    private static final long PLAY_MODEL_TTL_MS = 5L * 60 * 1000;
+
+    /** 播放模型缓存条数（LRU）：详情页只预热首集与续播集，6 条够覆盖最近点开的几部剧。 */
+    private static final int PLAY_MODEL_CACHE_MAX = 6;
+
+    /** 播放模型缓存条目：原始 video_model JSON + 写入时刻。 */
+    private static final class PlayModelEntry {
+        final JSONObject model;
+        final long at;
+
+        PlayModelEntry(JSONObject model, long at) {
+            this.model = model;
+            this.at = at;
+        }
+    }
+
+    /** 合并后的取流结果：把「是否被网关全拦」的判定一并带给所有等待方。 */
+    private static final class PlayModelResult {
+        final JSONObject model;
+        final boolean blocked;
+
+        PlayModelResult(JSONObject model, boolean blocked) {
+            this.model = model;
+            this.blocked = blocked;
+        }
+    }
+
+    /** vid → 原始 video_model（LRU + {@link #PLAY_MODEL_TTL_MS}）。 */
+    private final Map<String, PlayModelEntry> playModelCache =
+            Collections.synchronizedMap(
+                    new LinkedHashMap<String, PlayModelEntry>(8, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(Map.Entry<String, PlayModelEntry> eldest) {
+                            return size() > PLAY_MODEL_CACHE_MAX;
+                        }
+                    });
+
+    /**
+     * 同 vid 取流请求合并表。
+     *
+     * <p>详情页预热与播放页起播可能同时请求同一集：两条链各打一遍 12~36 次空请求不仅
+     * 白烧时间，还会以 60ms 间隔双倍轰击接口、自我放大风控。合并后只有一个在跑，
+     * 另一条直接等结果（顺带共享「被网关全拦」的判定）。
+     */
+    private final Map<String, FutureTask<PlayModelResult>> playModelInflight = new HashMap<>();
 
     /**
      * BUG-104：原字段 {@code appChannelBlockedByGateway} 已移除，改为每次取流的
@@ -1718,6 +1777,102 @@ public final class NetClient {
         throw lastError != null ? lastError : new Exception("HG播放信息为空");
     }
 
+    /**
+     * 带缓存 + 并发合并的 video_model 取流。
+     *
+     * @param fromCacheOut 可选输出：true = 本次用的是缓存里的模型（调用方据此判断
+     *                     fallback_api 是否已过期）。可为 null。
+     */
+    private JSONObject cachedVideoModel(String vid, AtomicBoolean blockedOut,
+                                        boolean[] fromCacheOut) throws Exception {
+        synchronized (playModelCache) {
+            PlayModelEntry entry = playModelCache.get(vid);
+            if (entry != null) {
+                long age = System.currentTimeMillis() - entry.at;
+                if (age <= PLAY_MODEL_TTL_MS) {
+                    AppLog.INSTANCE.d(TAG, "取流命中缓存 vid=" + vid
+                            + " 年龄=" + (age / 1000) + "s");
+                    blockedOut.set(false);
+                    if (fromCacheOut != null) fromCacheOut[0] = true;
+                    return entry.model;
+                }
+                playModelCache.remove(vid);
+            }
+        }
+        if (fromCacheOut != null) fromCacheOut[0] = false;
+
+        // 并发合并：同 vid 只有一个真正的取流任务，其余线程等它的结果。
+        FutureTask<PlayModelResult> task;
+        boolean owner = false;
+        synchronized (playModelInflight) {
+            task = playModelInflight.get(vid);
+            if (task == null) {
+                final String target = vid;
+                task = new FutureTask<PlayModelResult>(new Callable<PlayModelResult>() {
+                    @Override
+                    public PlayModelResult call() throws Exception {
+                        AtomicBoolean blocked = new AtomicBoolean(false);
+                        JSONObject model = fetchVideoModel(target, blocked);
+                        return new PlayModelResult(model, blocked.get());
+                    }
+                });
+                playModelInflight.put(vid, task);
+                owner = true;
+            }
+        }
+        if (owner) {
+            // 发起方在当前线程跑：预热与起播本来就都在 IO 线程，不额外占线程
+            task.run();
+        }
+        PlayModelResult result;
+        try {
+            result = task.get();
+        } catch (ExecutionException ee) {
+            Throwable cause = ee.getCause();
+            if (cause instanceof Exception) throw (Exception) cause;
+            throw ee;
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new Exception("取流被中断", ie);
+        } finally {
+            synchronized (playModelInflight) {
+                if (playModelInflight.get(vid) == task) playModelInflight.remove(vid);
+            }
+        }
+        blockedOut.set(result.blocked);
+        if (result.model != null) {
+            synchronized (playModelCache) {
+                playModelCache.put(vid, new PlayModelEntry(result.model, System.currentTimeMillis()));
+            }
+        }
+        return result.model;
+    }
+
+    /** 作废某个 vid 的取流缓存（地址/档位可能已变，需要重新取）。 */
+    private void invalidatePlayModel(String vid) {
+        synchronized (playModelCache) {
+            playModelCache.remove(vid);
+        }
+    }
+
+    /**
+     * 预热播放模型（详情页在 IO 线程调用）：把「200 空 body 墙」提前到用户还在选集的
+     * 时候，播放页起播时直接命中缓存。
+     *
+     * <p>失败静默——预热只承担提速，不承担任何用户可见结果；真正的错误由播放页走
+     * 同一条链路时按原有文案上抛。与播放页同 vid 的并发请求会被合并，不会重复打墙。
+     */
+    public void prewarmVideoModel(String vid) {
+        if (vid == null || vid.isEmpty()) return;
+        try {
+            cachedVideoModel(vid, new AtomicBoolean(false), null);
+            AppLog.INSTANCE.d(TAG, "预热播放模型完成 vid=" + vid);
+        } catch (Exception e) {
+            AppLog.INSTANCE.d(TAG, "预热播放模型失败（忽略） vid=" + vid
+                    + " reason=" + e.getMessage());
+        }
+    }
+
     /** 取流重试间的小退避：绝不抛中断（吞掉并恢复中断标记），失败不影响主流程。 */
     private static void sleepQuiet(long ms) {
         if (ms <= 0) return;
@@ -1892,6 +2047,9 @@ public final class NetClient {
         // 不涉及身份，不需要重置身份）。
         if (!appBlocked.get() && AV1_ONLY_MSG.equals(appErr.getMessage())) {
             AppLog.INSTANCE.d(TAG, "该集只下发 AV1，换节点重取一次 vid=" + vid);
+            // 必须连 video_model 一起重取：缓存里的 fallback_api 指向同一个节点，
+            // 只重放这一跳拿到的还是同一批 AV1 档，换节点就失去意义。
+            invalidatePlayModel(vid);
             try {
                 Thread.sleep(600L);
                 return appVideoModel(vid, maxHeight, appBlocked);
@@ -1913,7 +2071,8 @@ public final class NetClient {
     }
 
     private VideoModel appVideoModel(String vid, int maxHeight, AtomicBoolean blockedOut) throws Exception {
-        JSONObject model = fetchVideoModel(vid, blockedOut);
+        boolean[] fromCache = new boolean[1];
+        JSONObject model = cachedVideoModel(vid, blockedOut, fromCache);
         if (model == null) throw new Exception("HG播放信息为空");
 
         // 新路由的可用资源在 fallback_api：普通 GET（播放器 UA，免签名）拿
@@ -1924,6 +2083,13 @@ public final class NetClient {
             if (viaFallback != null) return viaFallback;
         } catch (Exception e) {
             AppLog.INSTANCE.e(TAG, "fallback_api 取流失败，回退 video_model 直读", e);
+            if (fromCache[0]) {
+                // 缓存里的 fallback_api 带时效，过期后这一跳必然失败：作废重取一次。
+                // 重取后 fromCache 为 false，不会再递归下去。
+                AppLog.INSTANCE.d(TAG, "缓存的 fallback_api 已失效，重新取流 vid=" + vid);
+                invalidatePlayModel(vid);
+                return appVideoModel(vid, maxHeight, blockedOut);
+            }
         }
 
         // 收集可播变体（h264 / bytevc1/HEVC，设备支持 AV1 时再含 bytevc2），

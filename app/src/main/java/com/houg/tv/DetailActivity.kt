@@ -124,6 +124,10 @@ class DetailActivity : AppCompatActivity() {
                 }
 
                 lastEp = App.watchHistory.lastEpisode(seriesId)
+                // 首播加速：停留在详情页的这几秒里，后台把首集（和续播集）的取流预热好。
+                // 起播慢的大头是播放接口的「200 空 body 墙」（约 14s），提前做掉后
+                // 播放器起播只剩 fallback 一跳 + 下载重封装。
+                prewarmPlayModels()
                 // 详情接口拿到的标题/封面更权威，若已收藏则**原地**刷新收藏项元数据
                 // （不动收藏时间，避免"只是看了下详情"就把该剧顶到收藏列表最前）
                 App.watchHistory.updateFavoriteMeta(seriesId, seriesTitle, seriesCover)
@@ -243,6 +247,29 @@ class DetailActivity : AppCompatActivity() {
                 .putExtra(EXTRA_TITLE, drama.title)
                 .putExtra(EXTRA_COVER, drama.cover)
         )
+    }
+
+    /**
+     * 预热播放模型：串行、静默失败。
+     *
+     * 只预热首集与续播集两个 vid。并行打多个 vid 会让「空 body」按请求频率放大
+     * （每个都是 12+ 次请求），串行则第一个成功后身份已放行，第二个通常一次命中。
+     */
+    private fun prewarmPlayModels() {
+        if (episodes.isEmpty()) return
+        val sorted = episodes.sortedBy { it.index }
+        val firstVid = sorted.first().vid
+        val resumeVid = if (lastEp > 0) {
+            sorted.firstOrNull { it.index == lastEp }?.vid
+        } else null
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                App.netClient.prewarmVideoModel(firstVid)
+                if (resumeVid != null && resumeVid != firstVid) {
+                    App.netClient.prewarmVideoModel(resumeVid)
+                }
+            }
+        }
     }
 
     /** 「继续观看」：直接进入上次那集，播放器会自动 seek 到上次位置。 */
