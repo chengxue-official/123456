@@ -2101,34 +2101,33 @@ public final class NetClient {
 
         sortVariantsForDevice(variants);
 
-        // 上限匹配：只保留 ≤ maxHeight 的档。**必须裁剪返回的变体列表**——
-        // 起播/预加载都是按 variants 顺序逐个下限，旧实现只挑 selected 却把全部
-        // 变体带回去，结果「切到 720P」实际仍下载了 1080P（用户反馈“调清晰度没用”）。
-        // 全部超限时按 HGTV 规则退到最低档当「兼容资源」（文案会标注）。
-        int cappedFrom = 0;
+        // 上限匹配：取 ≤ maxHeight 的最高档；全部超限则退到最低档当「兼容资源」。
+        Variant selected = null;
         if (maxHeight > 0) {
-            List<Variant> lower = new ArrayList<>();
             for (Variant v : variants) {
-                if (v.height > 0 && v.height <= maxHeight) lower.add(v);
-            }
-            if (!lower.isEmpty() && lower.size() < variants.size()) {
-                cappedFrom = variants.get(0).height;
-                variants = lower;
-            } else if (lower.isEmpty() && variants.get(variants.size() - 1).height > 0) {
-                cappedFrom = variants.get(0).height;
-                lower.add(variants.get(variants.size() - 1));
-                variants = lower;
+                if (v.height > 0 && v.height <= maxHeight) {
+                    selected = v;
+                    break;
+                }
             }
         }
-        Variant selected = variants.get(0);
+        if (selected == null) selected = variants.get(variants.size() - 1);
+
+        // 下载顺序：把选中档排到第一。起播/预加载都是按 variants 顺序逐个下限，
+        // 旧实现只挑 selected 却把全部变体原序带回去——切到 720P 时仍从 1080P 档
+        // 开始下载，用户反馈「调清晰度没用」。其余档保留在后面，失败时还能顺延。
+        List<Variant> ordered = new ArrayList<>(variants.size());
+        ordered.add(selected);
+        for (Variant v : variants) {
+            if (v != selected) ordered.add(v);
+        }
+        variants = ordered;
 
         int duration = parseDoubleInt(model.opt("video_duration"));
         if (duration <= 0) duration = parseDoubleInt(model.opt("duration"));
         AppLog.INSTANCE.d(TAG, "fallback 取得 " + variants.size() + " 档，选中 codec="
                 + selected.codec + " height=" + qualityDesc(selected.rawHeight, selected.height)
-                + " encrypted=" + selected.encrypted + " duration=" + duration
-                + (cappedFrom > 0 && cappedFrom != selected.height
-                ? " [上限 " + maxHeight + "P，已从 " + cappedFrom + "P 降档]" : ""));
+                + " encrypted=" + selected.encrypted + " duration=" + duration);
         return new VideoModel(vid, selected.urls, duration, "https://novel.snssdk.com/",
                 selected.cencKey, selected.encrypted, variants, selected.codec, selected.height);
     }
