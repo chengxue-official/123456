@@ -288,6 +288,23 @@ class SettingsActivity : AppCompatActivity() {
         bindSwitch(R.id.sw_rec_new, { p.getBoolean(REC_NEW, true) }) {
             p.edit().putBoolean(REC_NEW, it).apply()
         }
+
+        // 继续观看数量（首页该行最多展示几部剧，默认 3）
+        val counts = intArrayOf(3, 5, 8, 10)
+        val optCount = findViewById<TextView>(R.id.opt_continue_count)
+        fun renderCount() {
+            optCount.text = getString(R.string.set_continue_count_value, p.getInt(CONTINUE_COUNT, 3))
+        }
+        renderCount()
+        optCount.setOnClickListener {
+            val cur = p.getInt(CONTINUE_COUNT, 3)
+            val options = counts.map { getString(R.string.set_continue_count_value, it) }.toTypedArray()
+            pickOption(getString(R.string.set_continue_count_label),
+                options, counts.indexOf(cur).coerceAtLeast(0)) { which ->
+                p.edit().putInt(CONTINUE_COUNT, counts[which]).apply()
+                renderCount()
+            }
+        }
     }
 
     /* ==================== 系统高级 ==================== */
@@ -434,5 +451,7 @@ class SettingsActivity : AppCompatActivity() {
         const val REC_CONTINUE = "rec_continue"
         const val REC_HOT = "rec_hot"
         const val REC_NEW = "rec_new"
+        /** 首页「继续观看」展示的剧集数（默认 3，可配 3/5/8/10） */
+        const val CONTINUE_COUNT = "rec_continue_count"
     }
 }

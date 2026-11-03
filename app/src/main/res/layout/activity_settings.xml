@@ -363,6 +363,21 @@
                         </LinearLayout>
                     </LinearLayout>
 
+                    <!-- 继续观看数量（首页该行最多展示几部剧） -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/set_continue_count_label" />
+                            <TextView style="@style/SettingsHint" android:text="@string/set_continue_count_hint" />
+                        </LinearLayout>
+                        <TextView
+                            android:id="@+id/opt_continue_count"
+                            style="@style/SettingsOpt" />
+                    </LinearLayout>
+
                     <!-- 今日热播 -->
                     <LinearLayout style="@style/SettingsRow">
                         <LinearLayout

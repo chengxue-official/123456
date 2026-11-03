@@ -190,6 +190,9 @@
     <string name="size_xlarge">特大</string>
     <string name="set_group_rec">首页模块</string>
     <string name="set_group_rec_desc">关闭后首页不再请求与显示对应区块</string>
+    <string name="set_continue_count_label">继续观看数量</string>
+    <string name="set_continue_count_hint">首页「继续观看」最多显示几部剧</string>
+    <string name="set_continue_count_value">%1$d 部</string>
     <string name="set_group_sys">网络与存储</string>
     <string name="set_clear_history">清空观看历史</string>
     <string name="set_clear_fav">清空收藏</string>

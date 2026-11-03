@@ -114,7 +114,7 @@ class MainActivity : AppCompatActivity() {
         setupDock()
 
         if (recEnabled(SettingsActivity.REC_CONTINUE)) {
-            adapter.setContinue(App.watchHistory.list().take(3))
+            adapter.setContinue(App.watchHistory.list().take(continueCount()))
         }
         if (recEnabled(SettingsActivity.REC_HOT)) loadHot()
         if (recEnabled(SettingsActivity.REC_NEW)) loadPage(true)
@@ -405,7 +405,7 @@ class MainActivity : AppCompatActivity() {
     private fun applyRecPreferences() {
         adapter.setContinue(
             if (recEnabled(SettingsActivity.REC_CONTINUE)) {
-                App.watchHistory.list().take(3)
+                App.watchHistory.list().take(continueCount())
             } else {
                 emptyList()
             }
@@ -455,12 +455,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showExitConfirm() {
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle("退出")
             .setMessage("确定退出红果TV吗？")
             .setPositiveButton("退出") { _, _ -> finish() }
             .setNegativeButton("取消", null)
             .setCancelable(true)
-            .show()
+            .create()
+        // 遥控器：弹窗默认没有按钮焦点，首次按 OK 没反应。默认聚焦「取消」，
+        // 既让 OK/确定键立即可用，也避免误触直接退出。
+        dialog.setOnShowListener {
+            // post 到下一帧，避免对话框尚未完成布局时 requestFocus 无效
+            dialog.window?.decorView?.post {
+                dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.requestFocus()
+            }
+        }
+        dialog.show()
     }
+
+    /** 首页「继续观看」展示的剧集数（设置页可配，默认 3，上限 20）。 */
+    private fun continueCount(): Int =
+        getSharedPreferences(SettingsActivity.UI_PREFS, MODE_PRIVATE)
+            .getInt(SettingsActivity.CONTINUE_COUNT, 3)
+            .coerceIn(1, 20)
 }
