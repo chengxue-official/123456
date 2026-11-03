@@ -216,6 +216,8 @@ class PlayerActivity : AppCompatActivity() {
     }
     /** 上次写观看历史的时间戳（节流，避免 500ms 一次写盘） */
     private var lastHistoryWrite = 0L
+    /** 切集起点：READY 时用它打「切集耗时」，线上据此判断连播是否真的无感 */
+    private var switchStartedAt = 0L
     /** 上次按返回键的时间戳（双击退出判定） */
     private var lastBackPressed = 0L
 
@@ -383,6 +385,12 @@ class PlayerActivity : AppCompatActivity() {
                     if (hasVideoTrack()) {
                         // 【检验环节4】READY 且视频轨确认被选中，记录实际解码到的格式
                         logReadyVideoTrack()
+                        if (switchingEpisode) {
+                            // 连播/手动切集的真实等待时长：命中预加载应在 100ms 级，
+                            // 秒级说明预加载没跑起来（线上据此定位「变卡」）
+                            AppLog.d("PlayerActivity", "切集就绪 耗时="
+                                    + (System.currentTimeMillis() - switchStartedAt) + "ms")
+                        }
                         applyPendingResume()
                         notifyQualityIfNeeded()
                         // 预加载提前到「本集就绪」：当前集播的是本地明文文件，CDN
@@ -2367,6 +2375,7 @@ class PlayerActivity : AppCompatActivity() {
             return
         }
         switchingEpisode = true
+        switchStartedAt = System.currentTimeMillis()
         // 先落盘当前集进度，再切走（此刻 currentPos 仍指向旧集，读到的位置有效）
         recordHistory(force = true)
         // 只暂停不 stop：SurfaceView 保留上一集最后一帧（不黑屏），音频立即停。
