@@ -11,7 +11,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * 去 CENC 重封装：解密 mdat + 重写 moov（encv→hvc1、enca→mp4a、删 sinf/senc/saio/saiz/sgpd/sbgp），
+ * 去 CENC 重封装：解密 mdat + 重写 moov（encv→hvc1/av01、enca→mp4a、删 sinf/senc/saio/saiz/sgpd/sbgp），
  * 用 free box 补齐使 mdat 文件偏移不变。与 Python 金标准 _decrypt_ref.py 逐字节对齐。
  *
  * <p>2026-10 修复（线上 OOM：`Failed to allocate a 27994450 byte allocation`）：
@@ -227,11 +227,11 @@ public final class CencMp4Remuxer {
         for (int e = 0; e < entryCount; e++) {
             int esize = CencMp4Parser.readU32(buf, p);
             String etyp = CencMp4Parser.fourcc(buf, p + 4);
-            String newFourcc = mapFourcc(etyp);
             int childOff = p + sampleEntryChildrenOffset(etyp);
             int childEnd = p + esize;
 
             List<CencMp4Parser.Box> children = CencMp4Parser.parse(buf, childOff, childEnd);
+            String newFourcc = mapFourcc(buf, etyp, children);
             ByteArrayOutputStream childBytes = new ByteArrayOutputStream();
             for (CencMp4Parser.Box c : children) {
                 if ("sinf".equals(c.type)) continue;
@@ -259,10 +259,44 @@ public final class CencMp4Remuxer {
         return buildBox("stsd", payload.toByteArray());
     }
 
-    private static String mapFourcc(String etyp) {
-        if ("encv".equals(etyp) || "bvc1".equals(etyp) || "hev1".equals(etyp)) return "hvc1";
+    /**
+     * 加密 sample entry → 明文四字符码。
+     *
+     * ⚠️ `encv` 不能一律当 HEVC：AV1（bytevc2）片源的 entry 同样是 `encv`，
+     * 但原始格式在 `sinf/frma` 里写着 `av01`。旧实现无脑改成 `hvc1`，会产出
+     * 「挂 hvc1 头、喂 AV1 码流」的畸形文件，MediaExtractor 找不到可用视频轨，
+     * 线上表现为「该集没有可解码的视频轨（只有声音）」（2026-11-03 TCL 日志）。
+     */
+    private static String mapFourcc(byte[] buf, String etyp, List<CencMp4Parser.Box> children) {
+        if ("encv".equals(etyp)) {
+            String original = originalFormat(buf, children);
+            if ("av01".equals(original)) return "av01";
+            if ("avc1".equals(original) || "avc3".equals(original)) return "avc1";
+            // hvc1/hev1/bvc1 或老片源没写 frma 时按历史行为兜底为 hvc1
+            return "hvc1";
+        }
+        if ("bvc1".equals(etyp) || "hev1".equals(etyp)) return "hvc1";
         if ("enca".equals(etyp)) return "mp4a";
         return etyp;
+    }
+
+    /** 从 `sinf/frma` 读原始编码格式；缺失或解析异常返回 null。 */
+    private static String originalFormat(byte[] buf, List<CencMp4Parser.Box> children) {
+        for (CencMp4Parser.Box c : children) {
+            if (!"sinf".equals(c.type)) continue;
+            try {
+                List<CencMp4Parser.Box> inner =
+                        CencMp4Parser.parse(buf, c.start + c.hdr, c.end);
+                for (CencMp4Parser.Box b : inner) {
+                    if ("frma".equals(b.type)) {
+                        return CencMp4Parser.fourcc(buf, b.start + b.hdr);
+                    }
+                }
+            } catch (Exception ignored) {
+                // 结构异常时按无 frma 处理，走兜底
+            }
+        }
+        return null;
     }
 
     /** sample entry 子 box 起始偏移：视频 = 8+8+70=86；音频 = 8+8+20=36。 */
