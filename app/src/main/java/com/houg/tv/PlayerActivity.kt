@@ -414,6 +414,8 @@ class PlayerActivity : AppCompatActivity() {
                 videoHeight = size.height
             }
             applyAspectRatio()
+            // 实际画面尺寸到手后刷新「当前 xxP」：竖屏片要按短边显示（1080x1924 → 1080P）
+            updateQualityLabel()
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -1158,8 +1160,13 @@ class PlayerActivity : AppCompatActivity() {
         return if (mode.capHeight < 0) deviceCapHeight else mode.capHeight
     }
 
-    /** 是否处于软解（用户手动切软解，或本集解码器已被判定为软解）。 */
-    private fun softCapActive(): Boolean = decoderSoft || softDecoding
+    /**
+     * 是否需要按软解降档。**只对「自动」清晰度生效**：480/720/1080/原画都是用户
+     * 显式选择，必须无条件尊重（线上 2.0.10 反馈：手动选 1080P 被软解降成 720，
+     * 再调回 1080P 也没用，菜单还一直显示 600 多 P）。
+     */
+    private fun softCapActive(): Boolean =
+        qualityIndex == QUALITY_AUTO && (decoderSoft || softDecoding)
 
     /** 软解降档幅度：1080→720、720→480，再低不降（480 以下已没有算力收益）。 */
     private fun softTierDown(height: Int): Int = when {
@@ -1746,11 +1753,23 @@ class PlayerActivity : AppCompatActivity() {
         return limit in 1 until currentVariantHeight
     }
 
-    /** 更新清晰度菜单文案为「清晰度：档位名(+实际档)」。 */
+    /**
+     * 菜单里「当前 xxP」用的数值：优先取播放器实际解码到的**画面短边**
+     * （1080x1924 的竖屏片显示 1080P），拿不到再退回服务端选档值。
+     *
+     * 旧实现直接显示服务端下发的 height——竖屏短剧那是**长边**（1924/1282/642），
+     * 线上 2.0.10 用户因此以为「被降到 600 多 P」（日志 n7ojgxmyn7：标记 642P，
+     * 实际 tkhd=1080x1924，播的正是 1080P）。
+     */
+    private fun actualQualityHeight(): Int {
+        if (videoWidth > 0 && videoHeight > 0) return minOf(videoWidth, videoHeight)
+        return currentVariantHeight
+    }
+
     private fun updateQualityLabel() {
         val label = getString(QUALITY_MODES[qualityIndex].labelRes)
         val soft = if (softCapActive()) "（软解降档）" else ""
-        val actual = if (currentVariantHeight > 0) "（当前 " + currentVariantHeight + "P）" else ""
+        val actual = actualQualityHeight().let { if (it > 0) "（当前 " + it + "P）" else "" }
         menuQuality.text = getString(R.string.menu_quality) + "：" + label + soft + actual
     }
 
@@ -1775,7 +1794,7 @@ class PlayerActivity : AppCompatActivity() {
         // HGTV 同款「兼容资源」标注：服务端给的档比所选上限还高（全超限回落）时提示，
         // 避免用户以为切上了 1080P 实际播的是别的档。
         val compat = if (isCompatFallback()) "（兼容资源）" else ""
-        val actual = if (currentVariantHeight > 0) currentVariantHeight.toString() + "P" else "未知"
+        val actual = actualQualityHeight().let { if (it > 0) it.toString() + "P" else "未知" }
         toast(getString(R.string.menu_quality) + " " + label + compat + " → 实际 " + actual)
         updateQualityLabel()
     }
@@ -2098,9 +2117,10 @@ class PlayerActivity : AppCompatActivity() {
         // 当前集在边下边播：预加载下一集会抢同一根带宽，把正在播的流拖到缓冲。
         // 流播起播本身只要一两秒，预加载收益不值得这个代价。
         if (streamingCurrent) return
-        // 软解时解码本身已在抢 CPU 与堆：再叠加下一集的下载+重封装，1.3GB 老盒子
-        // 实测直接 OOM（Skyworth 9R59 / Android 5.1.1，空闲堆仅 5MB 时申请 21MB）。
-        if (softDecoding) return
+        // 软解时不再一刀切跳过预取：软解本来就是 CPU 吃紧，若连下一集也要现场
+        // 取流+下载+解密（线上实测 2~3.5s/集），连播体感就是「比旧版卡」。
+        // 真正要防的是堆爆（1.3GB 老盒子软解高分辨率会 OOM），交给下面的
+        // 堆余量判定兜住；余量不足时仍跳过。
         // 堆余量不足也不预取：重封装瞬时峰值要吃几十 MB，先保住正在播的这一集。
         if (freeHeapBytes() < PREFETCH_MIN_FREE_HEAP_BYTES) {
             AppLog.d("PlayerActivity", "堆余量不足，跳过预加载 free="

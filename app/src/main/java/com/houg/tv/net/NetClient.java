@@ -520,18 +520,44 @@ public final class NetClient {
 
     public static final class Variant {
         public final String codec;        // codec_type（bytevc1=HEVC/H.265，h264=AVC/H.264）
-        public final int height;          // 清晰度高度
+        /** 清晰度**短边**（「1080P / 720P」的 P 语义）。竖屏短剧的原始下发值是长边，已折算。 */
+        public final int height;
+        /** 服务端原始下发的高度（竖屏短剧里是长边，如 1080x1924 下发 1924），仅用于日志。 */
+        public final int rawHeight;
         public final List<String> urls;   // 该变体的多地址（已去重+解码）
         public final byte[] cencKey;      // CENC-AES-128 密钥（未加密时为 null）
         public final boolean encrypted;   // 是否 CENC 加密
 
-        Variant(String codec, int height, List<String> urls, byte[] cencKey, boolean encrypted) {
+        Variant(String codec, int height, int rawHeight, List<String> urls,
+                byte[] cencKey, boolean encrypted) {
             this.codec = codec;
             this.height = height;
+            this.rawHeight = rawHeight;
             this.urls = urls;
             this.cencKey = cencKey;
             this.encrypted = encrypted;
         }
+    }
+
+    /**
+     * 把服务端下发的高度折算成「短边」（1080P 的 P 语义）。
+     *
+     * 线上日志 n7ojgxmyn7（TCL tc8000 / Android 11 / 2.0.10）：竖屏短剧下发
+     * 1924/1282/962/854/642 五档，实际画面是 1080x1924——height 是**长边**。
+     * 直接拿它跟「720P 上限」比较，1282(=720P) 会被判超限，只剩 642 可选，
+     * 用户看到「调到 1080P 也没用、还是 600 多 P」。取 width 求短边即可对齐；
+     * 服务端没给 width 时退回原值（保持旧行为，不猜测）。
+     */
+    private static int qualityShortSide(JSONObject holder, int q) {
+        int w = parseDoubleInt(holder.opt("width"));
+        if (w <= 0) w = parseDoubleInt(holder.opt("vwidth"));
+        if (w > 0 && q > 0) return Math.min(w, q);
+        return q;
+    }
+
+    /** 日志用：短边与原始值不同时写成「1924→1080」。 */
+    private static String qualityDesc(int raw, int side) {
+        return side > 0 && side != raw ? raw + "→" + side : String.valueOf(raw);
     }
 
     /**
@@ -1913,8 +1939,10 @@ public final class NetClient {
         for (JSONObject v : videoListVariants(model)) {
             JSONObject meta = v.optJSONObject("video_meta");
             String codec = meta == null ? "" : meta.optString("codec_type", "").toLowerCase();
+            int rawQuality = definitionHeight(meta);
+            int shortSide = meta == null ? rawQuality : qualityShortSide(meta, rawQuality);
             rawDesc.append(' ').append(codec.isEmpty() ? "?" : codec).append('@')
-                    .append(definitionHeight(meta));
+                    .append(qualityDesc(rawQuality, shortSide));
             if (codec.contains("bytevc2") && !av1Ok) {
                 skippedBvc2++;
                 continue;
@@ -1938,8 +1966,7 @@ public final class NetClient {
                 }
             }
 
-            int height = definitionHeight(meta);
-            variants.add(new Variant(codec, height, addrs, cencKey, encrypted));
+            variants.add(new Variant(codec, shortSide, rawQuality, addrs, cencKey, encrypted));
         }
         // 先按设备解码能力筛/排序（不支持 HEVC 的设备只留 H.264），再套清晰度上限
         sortVariantsForDevice(variants);
@@ -2025,8 +2052,10 @@ public final class NetClient {
             JSONObject v = videoList.optJSONObject(key);
             if (v == null) continue;
             String codec = v.optString("codec_type", "").toLowerCase();
+            int rawQuality = playbackQuality(v, key);
+            int shortSide = qualityShortSide(v, rawQuality);
             rawDesc.append(' ').append(key).append('=').append(codec).append('@')
-                    .append(playbackQuality(v, key));
+                    .append(qualityDesc(rawQuality, shortSide));
             // AV1（bytevc2）：设备没有 AV1 硬解才跳过（电视端多数解不了；
             // 但带 AV1 硬解的 SoC 上这类「只下发 AV1」的集本就能播）
             if (("bytevc2".equals(codec) || "bvc2".equals(codec)) && !av1Ok) {
@@ -2059,7 +2088,7 @@ public final class NetClient {
             }
             List<String> urls = new ArrayList<>();
             urls.add(main);
-            variants.add(new Variant(codec, playbackQuality(v, key), urls, cencKey, encrypted));
+            variants.add(new Variant(codec, shortSide, rawQuality, urls, cencKey, encrypted));
         }
         AppLog.INSTANCE.d(TAG, "【检验环节1】fallback 原始下发 " + videoList.length()
                 + " 档:" + rawDesc + (skippedBvc2 > 0
@@ -2072,27 +2101,34 @@ public final class NetClient {
 
         sortVariantsForDevice(variants);
 
-        // 上限匹配：取 ≤ maxHeight 的最高档；全超限则取最低档当「兼容资源」
-        Variant selected = null;
+        // 上限匹配：只保留 ≤ maxHeight 的档。**必须裁剪返回的变体列表**——
+        // 起播/预加载都是按 variants 顺序逐个下限，旧实现只挑 selected 却把全部
+        // 变体带回去，结果「切到 720P」实际仍下载了 1080P（用户反馈“调清晰度没用”）。
+        // 全部超限时按 HGTV 规则退到最低档当「兼容资源」（文案会标注）。
+        int cappedFrom = 0;
         if (maxHeight > 0) {
+            List<Variant> lower = new ArrayList<>();
             for (Variant v : variants) {
-                if (v.height > 0 && v.height <= maxHeight) {
-                    selected = v;
-                    break;
-                }
+                if (v.height > 0 && v.height <= maxHeight) lower.add(v);
             }
-        } else {
-            selected = variants.get(0);
+            if (!lower.isEmpty() && lower.size() < variants.size()) {
+                cappedFrom = variants.get(0).height;
+                variants = lower;
+            } else if (lower.isEmpty() && variants.get(variants.size() - 1).height > 0) {
+                cappedFrom = variants.get(0).height;
+                lower.add(variants.get(variants.size() - 1));
+                variants = lower;
+            }
         }
-        if (selected == null) {
-            selected = variants.get(variants.size() - 1);
-        }
+        Variant selected = variants.get(0);
 
         int duration = parseDoubleInt(model.opt("video_duration"));
         if (duration <= 0) duration = parseDoubleInt(model.opt("duration"));
         AppLog.INSTANCE.d(TAG, "fallback 取得 " + variants.size() + " 档，选中 codec="
-                + selected.codec + " height=" + selected.height
-                + " encrypted=" + selected.encrypted + " duration=" + duration);
+                + selected.codec + " height=" + qualityDesc(selected.rawHeight, selected.height)
+                + " encrypted=" + selected.encrypted + " duration=" + duration
+                + (cappedFrom > 0 && cappedFrom != selected.height
+                ? " [上限 " + maxHeight + "P，已从 " + cappedFrom + "P 降档]" : ""));
         return new VideoModel(vid, selected.urls, duration, "https://novel.snssdk.com/",
                 selected.cencKey, selected.encrypted, variants, selected.codec, selected.height);
     }

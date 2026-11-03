@@ -215,7 +215,7 @@ public final class GuanguoSource {
                 if (!url.startsWith("http")) continue;
                 int height = parseHeight(text(c, "name"));
                 if (height <= 0) continue;
-                variants.add(new NetClient.Variant("h264", height,
+                variants.add(new NetClient.Variant("h264", height, height,
                         Collections.singletonList(url), null, false));
             }
         }
