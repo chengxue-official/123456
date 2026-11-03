@@ -1785,19 +1785,21 @@ public final class NetClient {
      */
     private JSONObject cachedVideoModel(String vid, AtomicBoolean blockedOut,
                                         boolean[] fromCacheOut) throws Exception {
+        // 锁内只做 map 操作（accessOrder 的 get 会改链表），日志与判定放到锁外
+        PlayModelEntry entry;
         synchronized (playModelCache) {
-            PlayModelEntry entry = playModelCache.get(vid);
-            if (entry != null) {
-                long age = System.currentTimeMillis() - entry.at;
-                if (age <= PLAY_MODEL_TTL_MS) {
-                    AppLog.INSTANCE.d(TAG, "取流命中缓存 vid=" + vid
-                            + " 年龄=" + (age / 1000) + "s");
-                    blockedOut.set(false);
-                    if (fromCacheOut != null) fromCacheOut[0] = true;
-                    return entry.model;
-                }
+            entry = playModelCache.get(vid);
+            if (entry != null && System.currentTimeMillis() - entry.at > PLAY_MODEL_TTL_MS) {
                 playModelCache.remove(vid);
+                entry = null;
             }
+        }
+        if (entry != null) {
+            long age = System.currentTimeMillis() - entry.at;
+            AppLog.INSTANCE.d(TAG, "取流命中缓存 vid=" + vid + " 年龄=" + (age / 1000) + "s");
+            blockedOut.set(false);
+            if (fromCacheOut != null) fromCacheOut[0] = true;
+            return entry.model;
         }
         if (fromCacheOut != null) fromCacheOut[0] = false;
 
@@ -1827,6 +1829,14 @@ public final class NetClient {
         PlayModelResult result;
         try {
             result = task.get();
+            // 先落缓存再摘除 inflight：否则存在「已摘表、缓存未写」的微窗口——
+            // 此刻进来的第三条线程既看不到缓存、也看不到在途任务，会白打一整条空 body 链。
+            blockedOut.set(result.blocked);
+            if (result.model != null) {
+                synchronized (playModelCache) {
+                    playModelCache.put(vid, new PlayModelEntry(result.model, System.currentTimeMillis()));
+                }
+            }
         } catch (ExecutionException ee) {
             Throwable cause = ee.getCause();
             if (cause instanceof Exception) throw (Exception) cause;
@@ -1837,12 +1847,6 @@ public final class NetClient {
         } finally {
             synchronized (playModelInflight) {
                 if (playModelInflight.get(vid) == task) playModelInflight.remove(vid);
-            }
-        }
-        blockedOut.set(result.blocked);
-        if (result.model != null) {
-            synchronized (playModelCache) {
-                playModelCache.put(vid, new PlayModelEntry(result.model, System.currentTimeMillis()));
             }
         }
         return result.model;
