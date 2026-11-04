@@ -91,6 +91,14 @@ public final class NetClient {
     private static final String AV1_ONLY_MSG =
             "该集片源只有 AV1（bytevc2）编码，本机无法解码，请换一集或反馈给开发者";
 
+    /**
+     * 「只有 AOSP 软解 AV1」的设备（c2.android.av1.decoder）能选的最高清晰度（短边）。
+     *
+     * <p>实测 TCL 25053RT47C（MTK MT5879，4 核 A55）上 1080p 竖屏 AV1 软解根本跑不动；
+     * 该集服务端只下发 AV1 时，留 360/480 这两档至少能看，而不是直接告诉用户「无法解码」。
+     */
+    private static final int SOFT_AV1_MAX_HEIGHT = 480;
+
     private static final Charset UTF8 = Charset.forName("UTF-8");
 
     private static final MediaType JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
@@ -745,44 +753,79 @@ public final class NetClient {
     }
 
     /**
-     * 设备是否具备 AV1(video/av01) 硬解能力（结果缓存）。
+     * 设备是否有 AV1(video/av01) 解码能力，0=无 / 1=只有 AOSP 软解 / 2=有硬解（结果缓存）。
      *
      * <p>为什么要探测：旧实现对 bytevc2(AV1) 是**无条件剔除**的——电视端确实大多
      * 没有 AV1 解码器，但 2022 年后的部分 SoC（Amlogic S905X4 / 联发科 MT9xxx 等）
      * 已经带 AV1 硬解。遇到「该集服务端只下发 AV1」的片源时，这些机器本可以直接播，
      * 却被我们一律跳过，报「本机无法解码」——是假故障。
      *
-     * <p>判定口径与 {@link #deviceSupportsHevc()} 一致：只认硬解，软解 AV1 播
-     * 1080p 在电视 SoC 上同样扛不住，不计入。
+     * <p>为什么还分「只有软解」：2020-2021 年的 MTK 电视（如 TCL 25053RT47C）带
+     * {@code c2.android.av1.decoder}（AOSP 软解），旧名单只排 google/software/sw./ffmpeg，
+     * 把它当成了<b>硬解</b>，于是选了 1080p AV1，2.0.10 的 remux 又把 encv 写成 hvc1 —
+     * 线上表现为「该集没有可解码的视频轨（只有声音）」。这类机器只保留小档。
      */
-    private static Boolean av1SupportedCache = null;
+    private static int av1SupportLevelCache = -1;
 
+    /** 设备是否具备 AV1 硬解（口径与 {@link #deviceSupportsHevc()} 一致，软解不计入）。 */
     private static synchronized boolean deviceSupportsAv1() {
-        if (av1SupportedCache != null) return av1SupportedCache;
-        boolean ok = false;
+        return av1SupportLevel() >= 2;
+    }
+
+    /** 设备是否「只有 AOSP 软解 AV1」（能解，但 1080p 在电视 SoC 上扛不住）。 */
+    private static synchronized boolean deviceSupportsAv1SoftOnly() {
+        return av1SupportLevel() == 1;
+    }
+
+    private static synchronized int av1SupportLevel() {
+        if (av1SupportLevelCache >= 0) return av1SupportLevelCache;
+        int level = 0;
         try {
             for (MediaCodecInfo info : new MediaCodecList(MediaCodecList.REGULAR_CODECS)
                     .getCodecInfos()) {
                 if (info.isEncoder()) continue;
-                String name = info.getName().toLowerCase();
-                if (name.contains("google") || name.contains("software")
-                        || name.contains("sw.") || name.contains("ffmpeg")) {
-                    continue; // 软解，不计入
-                }
+                boolean hasAv1 = false;
                 for (String type : info.getSupportedTypes()) {
                     if ("video/av01".equalsIgnoreCase(type)) {
-                        ok = true;
+                        hasAv1 = true;
                         break;
                     }
                 }
-                if (ok) break;
+                if (!hasAv1) continue;
+                if (isSoftwareDecoder(info.getName())) {
+                    level = Math.max(level, 1);
+                } else {
+                    level = 2;
+                    break;
+                }
             }
         } catch (Throwable t) {
-            ok = false;
+            level = 0;
         }
-        AppLog.INSTANCE.d(TAG, "设备 AV1 硬解能力=" + ok);
-        av1SupportedCache = ok;
-        return ok;
+        AppLog.INSTANCE.d(TAG, "设备 AV1 能力="
+                + (level == 2 ? "硬解" : level == 1 ? "仅软解" : "无"));
+        av1SupportLevelCache = level;
+        return level;
+    }
+
+    /**
+     * 是否为 AOSP/Google 的纯软解解码器。
+     *
+     * <p>{@code c2.android.*} 是 Codec2 的软件实现（libcodec2_soft_*），与厂商硬解
+     * {@code c2.mtk.* / c2.qti.* / OMX.MTK.*} 必须区分开——把它们当硬解会让 1080p
+     * 软解硬扛，线上实测黑屏、OOM 与「只有声音」都由此而来。
+     */
+    private static boolean isSoftwareDecoder(String codecName) {
+        String name = codecName.toLowerCase();
+        return name.contains("google") || name.contains("software")
+                || name.contains("sw.") || name.contains("ffmpeg")
+                || name.contains("c2.android.");
+    }
+
+    /** AV1 能力的中文描述（日志用）。 */
+    private static String av1LevelDesc() {
+        int level = av1SupportLevel();
+        return level == 2 ? "硬解" : (level == 1 ? "仅软解≤" + SOFT_AV1_MAX_HEIGHT + "P" : "无");
     }
 
     public static final class VideoModel {
@@ -2106,6 +2149,7 @@ public final class NetClient {
         StringBuilder rawDesc = new StringBuilder();
         int skippedBvc2 = 0;
         final boolean av1Ok = deviceSupportsAv1();
+        final boolean av1SoftOnly = !av1Ok && deviceSupportsAv1SoftOnly();
         for (JSONObject v : videoListVariants(model)) {
             JSONObject meta = v.optJSONObject("video_meta");
             String codec = meta == null ? "" : meta.optString("codec_type", "").toLowerCase();
@@ -2113,9 +2157,16 @@ public final class NetClient {
             int shortSide = meta == null ? rawQuality : qualityShortSide(meta, rawQuality);
             rawDesc.append(' ').append(codec.isEmpty() ? "?" : codec).append('@')
                     .append(qualityDesc(rawQuality, shortSide));
-            if (codec.contains("bytevc2") && !av1Ok) {
-                skippedBvc2++;
-                continue;
+            if (codec.contains("bytevc2") || codec.contains("bvc2")) {
+                // 无 AV1 解码器 → 全剔；只有 AOSP 软解 → 只留小档（1080p 软解必卡）
+                if (!av1Ok && !av1SoftOnly) {
+                    skippedBvc2++;
+                    continue;
+                }
+                if (av1SoftOnly && shortSide > SOFT_AV1_MAX_HEIGHT) {
+                    skippedBvc2++;
+                    continue;
+                }
             }
             List<String> addrs = extractMediaAddresses(v);
             if (addrs.isEmpty()) continue;
@@ -2160,15 +2211,18 @@ public final class NetClient {
 
         if (variants.isEmpty()) {
             AppLog.INSTANCE.d(TAG, "【检验环节1】video_model 直读原始下发:" + rawDesc
-                    + (skippedBvc2 > 0 ? " | bytevc2 剔除 " + skippedBvc2 + " 档" : "")
+                    + (skippedBvc2 > 0
+                    ? " | bytevc2 剔除 " + skippedBvc2 + " 档（AV1 能力=" + av1LevelDesc() + "）" : "")
                     + " → 全部不可播");
             if (keyErr != null) {
                 throw new Exception("HG媒体密钥不可用（片源解密失败），请换一集或稍后再试");
             }
-            throw new Exception(AV1_ONLY_MSG);
+            throw new Exception(skippedBvc2 > 0 && av1SupportLevel() == 0
+                    ? AV1_ONLY_MSG : "没有电视可播放的清晰度");
         }
         AppLog.INSTANCE.d(TAG, "【检验环节1】video_model 直读原始下发:" + rawDesc
-                + (skippedBvc2 > 0 ? " | bytevc2 剔除 " + skippedBvc2 + " 档" : ""));
+                + (skippedBvc2 > 0
+                ? " | bytevc2 剔除 " + skippedBvc2 + " 档（AV1 能力=" + av1LevelDesc() + "）" : ""));
 
         int duration = parseDoubleInt(model.opt("video_duration"));
         if (duration <= 0) duration = parseDoubleInt(model.opt("duration"));
@@ -2217,6 +2271,7 @@ public final class NetClient {
         StringBuilder rawDesc = new StringBuilder();
         int skippedBvc2 = 0;
         final boolean av1Ok = deviceSupportsAv1();
+        final boolean av1SoftOnly = !av1Ok && deviceSupportsAv1SoftOnly();
         for (java.util.Iterator<String> kit = videoList.keys(); kit.hasNext();) {
             String key = kit.next();
             JSONObject v = videoList.optJSONObject(key);
@@ -2226,11 +2281,17 @@ public final class NetClient {
             int shortSide = qualityShortSide(v, rawQuality);
             rawDesc.append(' ').append(key).append('=').append(codec).append('@')
                     .append(qualityDesc(rawQuality, shortSide));
-            // AV1（bytevc2）：设备没有 AV1 硬解才跳过（电视端多数解不了；
-            // 但带 AV1 硬解的 SoC 上这类「只下发 AV1」的集本就能播）
-            if (("bytevc2".equals(codec) || "bvc2".equals(codec)) && !av1Ok) {
-                skippedBvc2++;
-                continue;
+            // AV1（bytevc2）：无解码器全剔；只有 AOSP 软解（c2.android.av1.decoder）时
+            // 只留小档——1080p 竖屏 AV1 软解在电视 SoC 上必卡，2.0.10 还因此黑屏「只有声音」。
+            if ("bytevc2".equals(codec) || "bvc2".equals(codec)) {
+                if (!av1Ok && !av1SoftOnly) {
+                    skippedBvc2++;
+                    continue;
+                }
+                if (av1SoftOnly && shortSide > SOFT_AV1_MAX_HEIGHT) {
+                    skippedBvc2++;
+                    continue;
+                }
             }
             String main = cleanUrl(v.optString("main_url", ""));
             if (main.isEmpty()) continue;
@@ -2262,10 +2323,10 @@ public final class NetClient {
         }
         AppLog.INSTANCE.d(TAG, "【检验环节1】fallback 原始下发 " + videoList.length()
                 + " 档:" + rawDesc + (skippedBvc2 > 0
-                ? " | bytevc2 剔除 " + skippedBvc2 + " 档" : ""));
-        // 只剩 AV1 且本机没有 AV1 硬解时给准确结论（服务端确实没下发别的档位）
+                ? " | bytevc2 剔除 " + skippedBvc2 + " 档（AV1 能力=" + av1LevelDesc() + "）" : ""));
+        // 只剩 AV1 且本机连软解都没有时给准确结论（服务端确实没下发别的档位）
         if (variants.isEmpty()) {
-            throw new Exception(skippedBvc2 > 0 && !av1Ok
+            throw new Exception(skippedBvc2 > 0 && av1SupportLevel() == 0
                     ? AV1_ONLY_MSG : "没有电视可播放的清晰度");
         }
 
