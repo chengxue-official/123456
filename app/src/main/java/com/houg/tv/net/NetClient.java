@@ -1626,7 +1626,7 @@ public final class NetClient {
      *   "biz_param": { "detail_page_version":0, "device_level":3,
      *                  "disable_digg_stat":false, "need_all_video_definition":true,
      *                  "need_mp4_align":false, "use_os_player":false,
-     *                  "use_server_dns":false, "video_platform":1024 }
+     *                  "use_server_dns":false, "video_platform":3 }
      * }
      * </pre>
      *
@@ -1668,7 +1668,11 @@ public final class NetClient {
         bizParam.put("need_mp4_align", false);
         bizParam.put("use_os_player", false);
         bizParam.put("use_server_dns", false);
-        bizParam.put("video_platform", 1024);
+        // video_platform 决定服务端下发哪种编码：HGTV（Go 核心，minireel.go）用的是 3，
+        // 同一批 AV1-only 剧在它那边拿到的都是 HEVC；我们长期用 1024（电视端值），
+        // 服务端给的是 AV1（bytevc2）。线上 ggy6xte6gg 已证 1024 下这部剧几乎全是 AV1。
+        // 这里跟 HGTV 对齐成 3，若服务端因此改发 HEVC，就不必再走 AV1 重封装。
+        bizParam.put("video_platform", 3);
 
         JSONObject body = new JSONObject();
         body.put("video_id", vid);
