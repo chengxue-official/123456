@@ -2073,7 +2073,10 @@ class PlayerActivity : AppCompatActivity() {
 
     /** 诊断日志用的当前状态（实际倍速 + 实际清晰度）。 */
     private fun playbackTag(): String {
-        val quality = if (currentVariantHeight > 0) currentVariantHeight.toString() + "P" else "?"
+        // 竖屏剧的服务端 height 是长边（1920），日志曾被误打成「1912P/1920P」；
+        // 与菜单标签统一取实际画面短边（1080P）。
+        val side = actualQualityHeight()
+        val quality = if (side > 0) side.toString() + "P" else "?"
         return " 倍速=" + effectiveSpeed() + "x 清晰度=" + quality
     }
 
