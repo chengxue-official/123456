@@ -1,5 +1,7 @@
 package com.houg.tv.playback;
 
+import com.houg.tv.util.AppLog;
+
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -23,6 +25,15 @@ import java.util.List;
 public final class CencMp4Remuxer {
 
     private static final String[] DROPPED_STBL = {"senc", "saio", "saiz", "sgpd", "sbgp"};
+
+    private static final String TAG = "CencMp4Remuxer";
+
+    /**
+     * AV1 兜底配置盒（{@code av1C}）：marker+version=1、seq_profile=0、seq_level_idx_0=8、
+     * 8bit 4:2:0、无 configOBUs。片源只把 frma 改成 av01、没给 av1C 时补上这一份，
+     * 否则 MediaExtractor/ExoPlayer 认不出视频轨，只剩声音。
+     */
+    private static final byte[] FALLBACK_AV1C = {(byte) 0x81, 0x08, 0x0C, 0x00};
 
     /** 头部（ftyp+moov 及之间的 box）上限：正常约 200KB，超限说明结构异常，交给上层兜底。 */
     private static final int MAX_HEAD_BYTES = 16 * 1024 * 1024;
@@ -233,9 +244,23 @@ public final class CencMp4Remuxer {
             List<CencMp4Parser.Box> children = CencMp4Parser.parse(buf, childOff, childEnd);
             String newFourcc = mapFourcc(buf, etyp, children);
             ByteArrayOutputStream childBytes = new ByteArrayOutputStream();
+            boolean hasAv1c = false;
             for (CencMp4Parser.Box c : children) {
                 if ("sinf".equals(c.type)) continue;
+                // 服务端把 HEVC 片源转成 AV1 时可能只改了 frma、配置盒仍是 hvcC；
+                // 挂到 av01 下只会让解析器混淆，丢弃后用下面的 av1C 补位。
+                if ("av01".equals(newFourcc) && "hvcC".equals(c.type)) continue;
+                if ("av1C".equals(c.type)) hasAv1c = true;
                 childBytes.write(buf, c.start, c.end - c.start);
+            }
+            if ("av01".equals(newFourcc) && !hasAv1c) {
+                byte[] av1c = buildBox("av1C", FALLBACK_AV1C);
+                childBytes.write(av1c, 0, av1c.length);
+            }
+            if ("encv".equals(etyp) || "av01".equals(etyp)) {
+                // 线上 AV1 集「无视频轨」定案用：原始子盒里到底有没有 av1C
+                AppLog.INSTANCE.d(TAG, "stsd " + etyp + "→" + newFourcc + " 子盒="
+                        + boxTypes(children) + (hasAv1c ? " 含av1C" : " 补av1C"));
             }
 
             // fixed 跳过原 entry 的 8 字节 size+fourcc 头，只保留 sample_entry_base + visual/audio 固定字段。
@@ -257,6 +282,15 @@ public final class CencMp4Remuxer {
         payload.write(countBytes, 0, 4);
         payload.write(entries.toByteArray(), 0, entries.size());
         return buildBox("stsd", payload.toByteArray());
+    }
+
+    private static String boxTypes(List<CencMp4Parser.Box> children) {
+        StringBuilder sb = new StringBuilder();
+        for (CencMp4Parser.Box c : children) {
+            if (sb.length() > 0) sb.append(',');
+            sb.append(c.type);
+        }
+        return sb.toString();
     }
 
     /**

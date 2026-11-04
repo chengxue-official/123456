@@ -83,18 +83,16 @@ public final class NetClient {
                     + "若反复出现，等几分钟再试通常可恢复。";
 
     /**
-     * 该集只下发了 AV1(bytevc2)：当前无法播放，只能换集。
-     *
-     * <p>为什么连「有 AV1 硬解」的机器也不放加密 AV1：加密变体必须走本地 CENC
-     * 重封装，而重封装只能改 stsd 里的 4CC，生成不了 AV1 必需的 {@code av1C}
-     * 配置盒，MediaExtractor 认不出视频轨 → 只剩声音（2.0.13 线上复现，TCL MT5879）。
-     * 明文 AV1 不经重封装，仍按设备硬解能力保留。
+     * 该集只下发了 AV1(bytevc2)，且本机没有可用的 AV1 解码能力：确实没有可播档位。
      *
      * <p>同时作为「换一次重取」的判定依据——服务端下发编码集偶发随节点变化，
      * 重取一次可能拿到 HEVC；仍只有 AV1 才把这个结论交给用户。
      */
     private static final String AV1_ONLY_MSG =
-            "该集片源只有 AV1（bytevc2）编码，当前版本无法播放，请换一集或反馈给开发者";
+            "该集片源只有 AV1（bytevc2）编码，本机无法播放，请换一集或反馈给开发者";
+
+    /** 「仅软解 AV1」的设备能选的最高清晰度（短边）：1080p 竖屏 AV1 软解在电视 SoC 上扛不住。 */
+    private static final int SOFT_AV1_MAX_HEIGHT = 480;
 
     private static final Charset UTF8 = Charset.forName("UTF-8");
 
@@ -2140,7 +2138,7 @@ public final class NetClient {
         // 【检验环节1】直读路径同样记录原始档位（fallback 失败回退到这里时能看到全貌）
         StringBuilder rawDesc = new StringBuilder();
         int skippedBvc2 = 0;
-        final boolean av1Ok = deviceSupportsAv1();
+        final int av1Level = av1SupportLevel();
         for (JSONObject v : videoListVariants(model)) {
             JSONObject meta = v.optJSONObject("video_meta");
             String codec = meta == null ? "" : meta.optString("codec_type", "").toLowerCase();
@@ -2167,13 +2165,13 @@ public final class NetClient {
                 }
             }
 
-            // AV1（bytevc2）判定放在密钥解析之后：加密 AV1 必须本地重封装，而重封装
-            // 只改 stsd 的 4CC、生成不了 AV1 必需的 av1C 配置盒，MediaExtractor 认不出
-            // 视频轨 → 「只有声音」（2.0.13 线上复现）。故加密 AV1 一律剔除；
-            // 只有明文 AV1 且设备有硬解时才保留（不经重封装，可直接流播）。
-            if ((codec.contains("bytevc2") || codec.contains("bvc2")) && (encrypted || !av1Ok)) {
-                skippedBvc2++;
-                continue;
+            // AV1（bytevc2）：重封装会补 av1C（见 CencMp4Remuxer），硬解设备可播；
+            // 软解设备只留小档；完全没有 AV1 解码器才剔除。
+            if (codec.contains("bytevc2") || codec.contains("bvc2")) {
+                if (av1Level == 0 || (av1Level == 1 && shortSide > SOFT_AV1_MAX_HEIGHT)) {
+                    skippedBvc2++;
+                    continue;
+                }
             }
 
             variants.add(new Variant(codec, shortSide, rawQuality, addrs, cencKey, encrypted));
@@ -2259,7 +2257,7 @@ public final class NetClient {
         // 真机排查「某集播不了」先看这条：资源到底给了什么、剔完剩什么。
         StringBuilder rawDesc = new StringBuilder();
         int skippedBvc2 = 0;
-        final boolean av1Ok = deviceSupportsAv1();
+        final int av1Level = av1SupportLevel();
         for (java.util.Iterator<String> kit = videoList.keys(); kit.hasNext();) {
             String key = kit.next();
             JSONObject v = videoList.optJSONObject(key);
@@ -2293,10 +2291,12 @@ public final class NetClient {
                     continue;
                 }
             }
-            // 同直读路径：加密 AV1 剔除（重封装生成不了 av1C），明文 AV1 按硬解能力保留。
-            if ((codec.contains("bytevc2") || codec.contains("bvc2")) && (encrypted || !av1Ok)) {
-                skippedBvc2++;
-                continue;
+            // 同直读路径的 AV1 分级策略。
+            if (codec.contains("bytevc2") || codec.contains("bvc2")) {
+                if (av1Level == 0 || (av1Level == 1 && shortSide > SOFT_AV1_MAX_HEIGHT)) {
+                    skippedBvc2++;
+                    continue;
+                }
             }
 
             List<String> urls = new ArrayList<>();
