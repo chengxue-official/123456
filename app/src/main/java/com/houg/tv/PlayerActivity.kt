@@ -140,6 +140,9 @@ class PlayerActivity : AppCompatActivity() {
      * AV1 有声黑屏（线上 au20esnxau，TCL MT5879 / OMX.MS.AV1.Decoder）。
      */
     private var firstFrameRendered = false
+
+    /** AV1 集是否已经为「无首帧」自动切过一次软解（防无限重试）。 */
+    private var av1SoftRetried = false
     /**
      * 本集服务端实际下发的可用清晰度高度集合（已剔除 bytevc2 与设备解不了的编码）。
      * 空集表示未知（命中本地缓存 / 还没取流），此时清晰度菜单不设限。
@@ -1027,6 +1030,7 @@ class PlayerActivity : AppCompatActivity() {
         currentVariantHeight = 0
         currentVariantCodec = ""
         firstFrameRendered = false
+        av1SoftRetried = false
         availableHeights = emptySet()
 
         updateEpisodeInfo()
@@ -1949,6 +1953,16 @@ class PlayerActivity : AppCompatActivity() {
         handler.postDelayed({
             if (firstFrameRendered || currentPos != posAtReady) return@postDelayed
             if (player?.isPlaying != true) return@postDelayed
+            // 硬解一帧都出不来、但本机有 AV1 软件解码器：先自动切软解再给一次机会
+            // （软解慢但至少能出画面），切过仍不行才提示换集。
+            if (!decoderSoft && !av1SoftRetried && hasSoftwareAv1Decoder()) {
+                av1SoftRetried = true
+                AppLog.d("PlayerActivity", "AV1 首帧超时 → 自动切软解重试 vid="
+                        + vidList.getOrNull(posAtReady))
+                decoderSoft = true
+                rebuildPlayer()
+                return@postDelayed
+            }
             AppLog.e("PlayerActivity", "AV1 集 " + (AV1_FIRST_FRAME_TIMEOUT_MS / 1000)
                     + "s 未渲染首帧（有声黑屏）vid=" + this.vidList.getOrNull(this.currentPos), null)
             player?.pause()
@@ -1972,6 +1986,15 @@ class PlayerActivity : AppCompatActivity() {
             return "查询失败:" + (t.message ?: "")
         }
         return if (names.isEmpty()) "无" else names.joinToString(", ")
+    }
+
+    /** 本机是否存在 AV1 软件解码器（能绕开「configure 成功但解不出帧」的硬解）。 */
+    private fun hasSoftwareAv1Decoder(): Boolean {
+        val lower = av1DecoderCandidates().toLowerCase()
+        if (lower == "无" || lower.startsWith("查询失败")) return false
+        // AOSP/Google 软解命名：c2.android.av1.decoder / OMX.google.av1.decoder / .sw.
+        return lower.contains("google") || lower.contains("c2.android")
+                || lower.contains("software") || lower.contains(".sw.")
     }
 
     /**

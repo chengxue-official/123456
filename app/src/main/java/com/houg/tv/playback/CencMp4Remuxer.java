@@ -105,6 +105,10 @@ public final class CencMp4Remuxer {
                     CencMp4Parser.parse(head, moov.start + moov.hdr, moov.end);
             for (CencMp4Parser.Box trak : CencMp4Parser.find(moovChildren, "trak")) {
                 CencMp4Parser.Track info = CencMp4Parser.trackInfo(head, trak);
+                String entryFourcc = info.entries.isEmpty() ? "" : info.entries.get(0).fourcc;
+                boolean isVideo = "encv".equals(entryFourcc) || "av01".equals(entryFourcc)
+                        || "hvc1".equals(entryFourcc) || "hev1".equals(entryFourcc)
+                        || "avc1".equals(entryFourcc) || "avc3".equals(entryFourcc);
                 for (int i = 0; i < info.samples.size(); i++) {
                     CencMp4Parser.Sample s = info.samples.get(i);
                     int ivOffset = info.ivBase + i * info.ivSize;
@@ -114,7 +118,7 @@ public final class CencMp4Remuxer {
                     if (ivOffset < 0 || (long) ivOffset + info.ivSize > head.length) {
                         throw new Exception("样本 IV 越界");
                     }
-                    samples.add(new EncSample(s.offset, s.size, ivOffset, info.ivSize));
+                    samples.add(new EncSample(s.offset, s.size, ivOffset, info.ivSize, isVideo));
                 }
             }
             // ⚠️ 不用 samples.sort(Comparator.comparingInt(...))：
@@ -131,7 +135,20 @@ public final class CencMp4Remuxer {
             });
 
             // ---------- 3. 重写 moov，并按「原样拷贝 / 逐样本解密」流式写出 ----------
-            byte[] newMoov = rebuildContainer(head, moov);
+            // 加密 AV1（bytevc2）的 bv2C 配置盒不一定带可用的 configOBUs：硬解能
+            // configure 成功却一帧都解不出（线上有声黑屏，TCL MT5879）。这里先从
+            // 明文首样本里取 sequence header OBU，用它补全 av1C，让解码器拿到真实参数。
+            byte[] av1SeqHeader = null;
+            for (EncSample s : samples) {
+                if (!s.video) continue;
+                byte[] plain = readPlainSample(raf, head, s, key);
+                av1SeqHeader = findAv1SequenceHeader(plain);
+                break;
+            }
+            if (av1SeqHeader != null) {
+                AppLog.INSTANCE.d(TAG, "av1 首样本 sequence header 长度=" + av1SeqHeader.length);
+            }
+            byte[] newMoov = rebuildContainer(head, moov, av1SeqHeader);
             long gap = mdatStart - (moov.start + (long) newMoov.length);
             // BUG-117：mdat 区按原偏移逐样本拷贝（stco/co64 存的是绝对偏移），头部总长
             // 必须保持不变，空隙用 free box 补齐。free box 自身至少 8 字节，空隙不足 8
@@ -181,31 +198,86 @@ public final class CencMp4Remuxer {
         }
     }
 
-    /** 一个待解密样本：文件偏移、长度、IV 偏移与 IV 长度。 */
+    /** 一个待解密样本：文件偏移、长度、IV 偏移与 IV 长度；video 标记用于取 AV1 sequence header。 */
     private static final class EncSample {
         final int offset;
         final int size;
         final int ivOffset;
         final int ivSize;
+        final boolean video;
 
-        EncSample(int offset, int size, int ivOffset, int ivSize) {
+        EncSample(int offset, int size, int ivOffset, int ivSize, boolean video) {
             this.offset = offset;
             this.size = size;
             this.ivOffset = ivOffset;
             this.ivSize = ivSize;
+            this.video = video;
         }
+    }
+
+    /** 读取并解密单个样本（返回明文）。 */
+    private static byte[] readPlainSample(RandomAccessFile raf, byte[] head, EncSample s,
+            byte[] key) throws Exception {
+        if (s.size > MAX_SAMPLE_BYTES) throw new Exception("样本过大: " + s.size);
+        byte[] cipher = new byte[s.size];
+        raf.seek(s.offset);
+        raf.readFully(cipher);
+        byte[] iv = Arrays.copyOfRange(head, s.ivOffset, s.ivOffset + s.ivSize);
+        return CencSampleDecryptor.decrypt(cipher, iv, key);
+    }
+
+    /**
+     * 从明文 AV1 样本里找 sequence header OBU（type=1），返回完整 OBU
+     * （obu_header + obu_size + payload），用作 av1C 的 configOBUs。
+     *
+     * <p>AV1 在 MP4 里每个样本由若干 OBU 组成，OBU 头里 has_size_field 通常为 1。
+     * 只取第一个 sequence header；找不到返回 null（退化为只写 4 字节记录）。
+     */
+    private static byte[] findAv1SequenceHeader(byte[] data) {
+        int pos = 0;
+        while (pos + 1 < data.length) {
+            int b = data[pos] & 0xff;
+            if ((b & 0x80) != 0) return null;          // forbidden bit
+            int type = (b >> 3) & 0x0f;
+            boolean hasSize = ((b >> 1) & 0x01) != 0;
+            int p = pos + 1 + (((b >> 2) & 0x01) != 0 ? 1 : 0);   // extension header
+            if (!hasSize) return null;                  // MP4 样本里不应出现无 size 的 OBU
+            int q = p;
+            long size = 0;
+            int shift = 0;
+            while (q < data.length) {
+                int v = data[q++] & 0xff;
+                size |= (long) (v & 0x7f) << shift;
+                shift += 7;
+                if ((v & 0x80) == 0) break;
+                if (shift > 28) return null;
+            }
+            int end = (int) Math.min(data.length, q + size);
+            if (type == 1) return Arrays.copyOfRange(data, pos, end);
+            pos = end;
+        }
+        return null;
+    }
+
+    /** av1C 的 4 字节记录：bv2C 内容合法就沿用，否则用固定兜底（profile 0 / level 4.0）。 */
+    private static byte[] av1cRecord(byte[] bv2c) {
+        if (bv2c == null || bv2c.length < 4) return FALLBACK_AV1C;
+        int b0 = bv2c[0] & 0xff;
+        if ((b0 & 0x80) != 0x80 || (b0 & 0x7f) != 1) return FALLBACK_AV1C;
+        return new byte[]{bv2c[0], bv2c[1], bv2c[2], bv2c[3]};
     }
 
     /* ---------------- 重写 ---------------- */
 
-    private static byte[] rebuildContainer(byte[] buf, CencMp4Parser.Box box) {
+    private static byte[] rebuildContainer(byte[] buf, CencMp4Parser.Box box,
+            byte[] av1SeqHeader) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         for (CencMp4Parser.Box c : box.children) {
             if ("stbl".equals(c.type)) {
-                byte[] rebuilt = rebuildStbl(buf, c);
+                byte[] rebuilt = rebuildStbl(buf, c, av1SeqHeader);
                 out.write(rebuilt, 0, rebuilt.length);
             } else if (CencMp4Parser.isContainer(c.type)) {
-                byte[] rebuilt = rebuildContainer(buf, c);
+                byte[] rebuilt = rebuildContainer(buf, c, av1SeqHeader);
                 out.write(rebuilt, 0, rebuilt.length);
             } else {
                 out.write(buf, c.start, c.end - c.start);
@@ -214,12 +286,13 @@ public final class CencMp4Remuxer {
         return buildBox(box.type, out.toByteArray());
     }
 
-    private static byte[] rebuildStbl(byte[] buf, CencMp4Parser.Box stbl) {
+    private static byte[] rebuildStbl(byte[] buf, CencMp4Parser.Box stbl,
+            byte[] av1SeqHeader) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         for (CencMp4Parser.Box c : stbl.children) {
             if (isDropped(c.type)) continue;
             if ("stsd".equals(c.type)) {
-                byte[] rebuilt = rebuildStsd(buf, c);
+                byte[] rebuilt = rebuildStsd(buf, c, av1SeqHeader);
                 out.write(rebuilt, 0, rebuilt.length);
             } else {
                 out.write(buf, c.start, c.end - c.start);
@@ -228,7 +301,8 @@ public final class CencMp4Remuxer {
         return buildBox("stbl", out.toByteArray());
     }
 
-    private static byte[] rebuildStsd(byte[] buf, CencMp4Parser.Box stsd) {
+    private static byte[] rebuildStsd(byte[] buf, CencMp4Parser.Box stsd,
+            byte[] av1SeqHeader) {
         int p = stsd.start + stsd.hdr;
         byte[] fullbox = Arrays.copyOfRange(buf, p, p + 4); // version+flags
         int entryCount = CencMp4Parser.readU32(buf, p + 4);
@@ -262,10 +336,18 @@ public final class CencMp4Remuxer {
                 childBytes.write(buf, c.start, c.end - c.start);
             }
             if ("av01".equals(newFourcc) && !hasAv1c) {
-                byte[] payload = bv2cPayload != null ? bv2cPayload : FALLBACK_AV1C;
+                // 记录部分沿用 bv2C 前 4 字节（含真实 profile/level/位深），
+                // 但 configOBUs 一律用从码流里提取的 sequence header——bv2C 里的
+                // 那份常常缺失或不是标准 OBU，硬解 configure 通过却解不出帧。
+                byte[] record = av1cRecord(bv2cPayload);
+                byte[] payload = record;
+                if (av1SeqHeader != null) {
+                    payload = new byte[record.length + av1SeqHeader.length];
+                    System.arraycopy(record, 0, payload, 0, record.length);
+                    System.arraycopy(av1SeqHeader, 0, payload, record.length,
+                            av1SeqHeader.length);
+                }
                 if (bv2cPayload != null) {
-                    // 线上「AV1 有声黑屏」定案用：bv2C 的内容是否符合标准 av1C 记录
-                    // （首字节应为 0x81 = marker 1 + version 1）。
                     AppLog.INSTANCE.d(TAG, "bv2C payload len=" + bv2cPayload.length
                             + " head=" + hexPreview(bv2cPayload));
                 }
