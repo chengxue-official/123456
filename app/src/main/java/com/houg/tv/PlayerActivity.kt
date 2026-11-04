@@ -136,6 +136,11 @@ class PlayerActivity : AppCompatActivity() {
     /** 本集实际取到的编码（videoModel 返回，如 bytevc1/avc），空串表示未知（如命中本地缓存）。 */
     private var currentVariantCodec = ""
     /**
+     * 本集是否已经渲染过首帧。用于识别「视频轨/解码器都就绪、但一帧都不出」的
+     * AV1 有声黑屏（线上 au20esnxau，TCL MT5879 / OMX.MS.AV1.Decoder）。
+     */
+    private var firstFrameRendered = false
+    /**
      * 本集服务端实际下发的可用清晰度高度集合（已剔除 bytevc2 与设备解不了的编码）。
      * 空集表示未知（命中本地缓存 / 还没取流），此时清晰度菜单不设限。
      */
@@ -385,6 +390,7 @@ class PlayerActivity : AppCompatActivity() {
                     if (hasVideoTrack()) {
                         // 【检验环节4】READY 且视频轨确认被选中，记录实际解码到的格式
                         logReadyVideoTrack()
+                        armAv1FirstFrameWatch()
                         if (switchingEpisode) {
                             // 连播/手动切集的真实等待时长：命中预加载应在 100ms 级，
                             // 秒级说明预加载没跑起来（线上据此定位「变卡」）
@@ -443,6 +449,8 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         override fun onRenderedFirstFrame() {
+            firstFrameRendered = true
+            AppLog.d("PlayerActivity", "首帧渲染 编码=" + currentVariantCodec + playbackTag())
             // 真正出画面的那一刻才收起转圈（无感切集的核心：有画面就不该有 loading）
             hideLoading()
         }
@@ -1018,6 +1026,7 @@ class PlayerActivity : AppCompatActivity() {
         // 本集实际档位未知（缓存命中时拿不到 videoModel 的 height，菜单文案取「未知」）
         currentVariantHeight = 0
         currentVariantCodec = ""
+        firstFrameRendered = false
         availableHeights = emptySet()
 
         updateEpisodeInfo()
@@ -1922,6 +1931,47 @@ class PlayerActivity : AppCompatActivity() {
         } catch (e: Throwable) {
             AppLog.d("PlayerActivity", "【检验环节4】视频轨日志失败: " + (e.message ?: ""))
         }
+    }
+
+    /**
+     * AV1（bytevc2）片源在当前机型上可能「视频轨识别成功、解码器初始化成功，但一帧都
+     * 渲染不出来」，表现为有声音的黑屏。线上 au20esnxau（TCL MT5879）实测：
+     * 5 档全 bytevc2、READY 有 video/av01 轨、OMX.MS.AV1.Decoder 初始化成功，
+     * 但几十秒都没有画面。
+     * 这里做超时兜底：超过 [AV1_FIRST_FRAME_TIMEOUT_MS] 仍无首帧就暂停并明确提示换集，
+     * 避免用户对着黑屏一直等（进度条还在走，看起来像正常播放）。
+     */
+    private fun armAv1FirstFrameWatch() {
+        if (!currentVariantCodec.contains("bytevc2")) return
+        AppLog.d("PlayerActivity", "AV1 解码器候选=" + av1DecoderCandidates()
+                + " 设备下发编码=" + currentVariantCodec)
+        val posAtReady = currentPos
+        handler.postDelayed({
+            if (firstFrameRendered || currentPos != posAtReady) return@postDelayed
+            if (player?.isPlaying != true) return@postDelayed
+            AppLog.e("PlayerActivity", "AV1 集 " + (AV1_FIRST_FRAME_TIMEOUT_MS / 1000)
+                    + "s 未渲染首帧（有声黑屏）vid=" + this.vidList.getOrNull(this.currentPos), null)
+            player?.pause()
+            showError("该集片源是 AV1，本机解码器只出声音不出画面，请按上下键换一集", true)
+        }, AV1_FIRST_FRAME_TIMEOUT_MS)
+    }
+
+    /**
+     * 列出本机所有 AV1 解码器（含软件解码器）。AV1 有声黑屏时用它判断：
+     * 是硬解吃不下这份码流，还是压根没有可用的软件解码器可以绕开。
+     */
+    private fun av1DecoderCandidates(): String {
+        val names = ArrayList<String>()
+        try {
+            val list = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS)
+            for (info in list.codecInfos) {
+                if (info.isEncoder) continue
+                if (info.supportedTypes.any { it.equals("video/av01", true) }) names.add(info.name)
+            }
+        } catch (t: Throwable) {
+            return "查询失败:" + (t.message ?: "")
+        }
+        return if (names.isEmpty()) "无" else names.joinToString(", ")
     }
 
     /**
@@ -3304,6 +3354,8 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     companion object {
+        /** AV1（bytevc2）集「有声黑屏」的判定时限，见 [armAv1FirstFrameWatch]。 */
+        private const val AV1_FIRST_FRAME_TIMEOUT_MS = 8000L
         const val EXTRA_SERIES_ID = "series_id"
         const val EXTRA_TITLE = "title"
         const val EXTRA_COVER = "cover"

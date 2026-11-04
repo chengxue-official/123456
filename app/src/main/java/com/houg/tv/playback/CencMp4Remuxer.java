@@ -263,6 +263,12 @@ public final class CencMp4Remuxer {
             }
             if ("av01".equals(newFourcc) && !hasAv1c) {
                 byte[] payload = bv2cPayload != null ? bv2cPayload : FALLBACK_AV1C;
+                if (bv2cPayload != null) {
+                    // 线上「AV1 有声黑屏」定案用：bv2C 的内容是否符合标准 av1C 记录
+                    // （首字节应为 0x81 = marker 1 + version 1）。
+                    AppLog.INSTANCE.d(TAG, "bv2C payload len=" + bv2cPayload.length
+                            + " head=" + hexPreview(bv2cPayload));
+                }
                 byte[] av1c = buildBox("av1C", payload);
                 childBytes.write(av1c, 0, av1c.length);
             }
@@ -328,6 +334,18 @@ public final class CencMp4Remuxer {
         if ("bvc1".equals(etyp) || "hev1".equals(etyp)) return "hvc1";
         if ("enca".equals(etyp)) return "mp4a";
         return etyp;
+    }
+
+    /** 前 8 字节的十六进制预览，用于线上定案配置盒内容。 */
+    private static String hexPreview(byte[] data) {
+        StringBuilder sb = new StringBuilder();
+        int n = Math.min(8, data.length);
+        for (int i = 0; i < n; i++) {
+            if (i > 0) sb.append(' ');
+            sb.append(Integer.toHexString(data[i] & 0xff));
+        }
+        if (data.length > n) sb.append(" ...");
+        return sb.toString();
     }
 
     private static boolean hasChild(List<CencMp4Parser.Box> children, String type) {
