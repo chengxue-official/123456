@@ -2314,17 +2314,24 @@ public final class NetClient {
 
         sortVariantsForDevice(variants);
 
-        // 上限匹配：取 ≤ maxHeight 的最高档；全部超限则退到最低档当「兼容资源」。
-        Variant selected = null;
+        // 上限匹配：maxHeight<=0（不限）时取最高档；>0 时取 ≤maxHeight 的最高档；
+        // 全部超限才退到最低档当「兼容资源」。
+        // 2.0.13 线上事故：maxHeight=0 时 selected 一直 null，被下面的兜底按下限退到最低档，
+        // 结果「上限=0P 选中 360P」——自动清晰度反而永远下最低档（TCL 日志 17:20:37）。
+        Variant selected;
         if (maxHeight > 0) {
+            Variant match = null;
             for (Variant v : variants) {
                 if (v.height > 0 && v.height <= maxHeight) {
-                    selected = v;
+                    match = v;
                     break;
                 }
             }
+            selected = match != null ? match : variants.get(variants.size() - 1);
+        } else {
+            // 不限上限：variants 已按高度降序，第一档即最高
+            selected = variants.get(0);
         }
-        if (selected == null) selected = variants.get(variants.size() - 1);
 
         // 下载顺序：把选中档排到第一。起播/预加载都是按 variants 顺序逐个下限，
         // 旧实现只挑 selected 却把全部变体原序带回去——切到 720P 时仍从 1080P 档

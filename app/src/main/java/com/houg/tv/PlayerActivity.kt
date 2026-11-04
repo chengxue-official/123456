@@ -1323,7 +1323,15 @@ class PlayerActivity : AppCompatActivity() {
                     }
                     out.delete()
                     if (!tmpFile.renameTo(out)) {
-                        tmpFile.copyTo(out, overwrite = true)
+                        // 同一档位可能被另一个写入方（预取 / 重复起播）抢先产出：
+                        // rename 落空后若 tmp 已不在、但 out 已就绪，说明对方已发布，直接复用；
+                        // 否则才 copy（旧实现在这里直接 copyTo，对方删掉 tmp 时抛 ENOENT，
+                        // 线上误报「视频下载或解密失败」）。
+                        if (tmpFile.exists()) {
+                            tmpFile.copyTo(out, overwrite = true)
+                        } else if (!out.exists() || out.length() <= 0) {
+                            throw IllegalStateException("重封装产物丢失: " + tmpFile.name)
+                        }
                     }
                 } finally {
                     tmpFile.delete()
