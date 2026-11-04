@@ -2083,16 +2083,24 @@ public final class NetClient {
         } catch (Exception first) {
             appErr = first;
         }
-        // 只有 AV1 档时换一次重取：服务端下发的编码集偶发随 CDN 节点变化，
-        // 换一个节点可能拿到 HEVC；仍只有 AV1 才把结论交给用户（不同节点重取
-        // 不涉及身份，不需要重置身份）。
+        // 只有 AV1 档时换「全新设备身份」重取一次。
+        //
+        // HGTV（Go 核心，minireel.go）的取流策略是「一个设备身份只取一次 video_model」：
+        // 每次取流都注册一个全新 identity，服务端才按通用 HEVC 下发。我们长期复用同一个
+        // 身份，服务端按电视端省带宽策略下发 AV1（bytevc2）——线上 ggy6xte6gg / au20esnxau
+        // / 9ur2ucc59u 都显示同一部剧里已有集变 bytevc1，说明身份越新鲜越可能拿到 HEVC。
+        // 这里只在「整集只有 AV1」时换一次新身份重取，普通集完全不受影响，也不会比原来
+        // 「换节点重取」多打请求（原来那次重取同样要重抓 video_model）。
         if (!appBlocked.get() && AV1_ONLY_MSG.equals(appErr.getMessage())) {
-            AppLog.INSTANCE.d(TAG, "该集只下发 AV1，换节点重取一次 vid=" + vid);
-            // 必须连 video_model 一起重取：缓存里的 fallback_api 指向同一个节点，
-            // 只重放这一跳拿到的还是同一批 AV1 档，换节点就失去意义。
+            AppLog.INSTANCE.d(TAG, "该集只下发 AV1，换新设备身份重取一次 vid=" + vid);
+            // 必须连 video_model 一起重取：缓存里的 fallback_api 指向旧身份的同一批
+            // AV1 档，只重放这一跳拿到的还是 AV1。
             invalidatePlayModel(vid);
             try {
-                Thread.sleep(600L);
+                DeviceRegister.resetIdentity();
+                DeviceRegister.registerNow(client);
+                AppLog.INSTANCE.d(TAG, "AV1 重取换身份 新 device_id=" + DeviceRegister.deviceId());
+                Thread.sleep(300L);
                 return appVideoModel(vid, maxHeight, appBlocked);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
