@@ -245,22 +245,32 @@ public final class CencMp4Remuxer {
             String newFourcc = mapFourcc(buf, etyp, children);
             ByteArrayOutputStream childBytes = new ByteArrayOutputStream();
             boolean hasAv1c = false;
+            byte[] bv2cPayload = null;
             for (CencMp4Parser.Box c : children) {
                 if ("sinf".equals(c.type)) continue;
-                // 服务端把 HEVC 片源转成 AV1 时可能只改了 frma、配置盒仍是 hvcC；
-                // 挂到 av01 下只会让解析器混淆，丢弃后用下面的 av1C 补位。
-                if ("av01".equals(newFourcc) && "hvcC".equals(c.type)) continue;
+                // 字节自定义的 AV1 配置盒（bytevc2 的 bv2C），ExoPlayer 不认它的四字符码；
+                // 结构与 AV1CodecConfigurationRecord 相同，取 payload 改写成标准 av1C。
+                if ("bv2C".equals(c.type)) {
+                    bv2cPayload = Arrays.copyOfRange(buf, c.start + c.hdr, c.end);
+                    continue;
+                }
+                // 容器头与码流编码不符时（frma 写 hvc1、实际是 AV1），残留的 hvcC/avcC
+                // 只会让解析器找错配置盒，直接丢弃。
+                if ("av01".equals(newFourcc)
+                        && ("hvcC".equals(c.type) || "avcC".equals(c.type))) continue;
                 if ("av1C".equals(c.type)) hasAv1c = true;
                 childBytes.write(buf, c.start, c.end - c.start);
             }
             if ("av01".equals(newFourcc) && !hasAv1c) {
-                byte[] av1c = buildBox("av1C", FALLBACK_AV1C);
+                byte[] payload = bv2cPayload != null ? bv2cPayload : FALLBACK_AV1C;
+                byte[] av1c = buildBox("av1C", payload);
                 childBytes.write(av1c, 0, av1c.length);
             }
             if ("encv".equals(etyp) || "av01".equals(etyp)) {
-                // 线上 AV1 集「无视频轨」定案用：原始子盒里到底有没有 av1C
+                // 线上 AV1 集「无视频轨」定案用：原始子盒里到底有什么配置盒
                 AppLog.INSTANCE.d(TAG, "stsd " + etyp + "→" + newFourcc + " 子盒="
-                        + boxTypes(children) + (hasAv1c ? " 含av1C" : " 补av1C"));
+                        + boxTypes(children) + (hasAv1c ? " 含av1C"
+                        : (bv2cPayload != null ? " bv2C→av1C" : " 补av1C")));
             }
 
             // fixed 跳过原 entry 的 8 字节 size+fourcc 头，只保留 sample_entry_base + visual/audio 固定字段。
@@ -303,6 +313,12 @@ public final class CencMp4Remuxer {
      */
     private static String mapFourcc(byte[] buf, String etyp, List<CencMp4Parser.Box> children) {
         if ("encv".equals(etyp)) {
+            // 以配置盒为准，不信 frma：2.0.15 线上日志 2bidew6y2b（TCL MT5879，19:19）
+            // 出现 frma=hvc1、子盒却是 bv2C（AV1 配置）的片源，按 frma 改成 hvc1 后
+            // ExoPlayer 找不到 hvcC，报「没有可解码的视频轨（只有声音）」。
+            if (hasChild(children, "bv2C") || hasChild(children, "av1C")) return "av01";
+            if (hasChild(children, "hvcC")) return "hvc1";
+            if (hasChild(children, "avcC")) return "avc1";
             String original = originalFormat(buf, children);
             if ("av01".equals(original)) return "av01";
             if ("avc1".equals(original) || "avc3".equals(original)) return "avc1";
@@ -312,6 +328,13 @@ public final class CencMp4Remuxer {
         if ("bvc1".equals(etyp) || "hev1".equals(etyp)) return "hvc1";
         if ("enca".equals(etyp)) return "mp4a";
         return etyp;
+    }
+
+    private static boolean hasChild(List<CencMp4Parser.Box> children, String type) {
+        for (CencMp4Parser.Box c : children) {
+            if (type.equals(c.type)) return true;
+        }
+        return false;
     }
 
     /** 从 `sinf/frma` 读原始编码格式；缺失或解析异常返回 null。 */
