@@ -1707,6 +1707,23 @@ public final class NetClient {
         //  第 1 轮：原身份，6 域名 × 2 次，空响应后逐次小退避；
         //  第 2 轮：不换身份，退避 2s 后原身份再来一轮（把重试摊到时间轴上）；
         //  第 3 轮：仍全空才换新身份（兼容真正的身份黑名单），再做最后一轮。
+        // 【2026-11-04 策略调整】改为 HGTV 的思路：一个 device_id 只用于一次取流。
+        //
+        // HGTV（Go 核心）源码注释写得很直白：a video_model request consumes its
+        // device identity at the upstream。它每次取流前都注册一个全新身份，因此
+        // 既没有 200 空 body 墙，也很少下发 AV1。我们长期复用同一身份的结果是：
+        // 空 body 12~14s、部分集被按电视端省带宽策略降成 bytevc2（AV1）。
+        // 首次注册失败时沿用当前身份继续（下面三轮逻辑仍当兜底）。
+        try {
+            DeviceRegister.resetIdentity();
+            DeviceRegister.registerNow(client);
+            start = HostPool.currentIndex();
+            AppLog.INSTANCE.d(TAG, "取流前换新身份 device_id=" + DeviceRegister.deviceId()
+                    + " vid=" + vid);
+        } catch (Exception e) {
+            AppLog.INSTANCE.e(TAG, "取流前换新身份失败（沿用当前身份继续）", e);
+        }
+
         outer:
         for (int round = 1; round <= 3; round++) {
             for (int i = 0; i < attemptCount; i++) {
