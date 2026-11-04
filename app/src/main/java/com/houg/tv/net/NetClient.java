@@ -83,21 +83,18 @@ public final class NetClient {
                     + "若反复出现，等几分钟再试通常可恢复。";
 
     /**
-     * 该集只下发了 AV1(bytevc2)，且本机没有 AV1 硬解：确实没有可播档位。
+     * 该集只下发了 AV1(bytevc2)：当前无法播放，只能换集。
+     *
+     * <p>为什么连「有 AV1 硬解」的机器也不放加密 AV1：加密变体必须走本地 CENC
+     * 重封装，而重封装只能改 stsd 里的 4CC，生成不了 AV1 必需的 {@code av1C}
+     * 配置盒，MediaExtractor 认不出视频轨 → 只剩声音（2.0.13 线上复现，TCL MT5879）。
+     * 明文 AV1 不经重封装，仍按设备硬解能力保留。
      *
      * <p>同时作为「换一次重取」的判定依据——服务端下发编码集偶发随节点变化，
      * 重取一次可能拿到 HEVC；仍只有 AV1 才把这个结论交给用户。
      */
     private static final String AV1_ONLY_MSG =
-            "该集片源只有 AV1（bytevc2）编码，本机无法解码，请换一集或反馈给开发者";
-
-    /**
-     * 「只有 AOSP 软解 AV1」的设备（c2.android.av1.decoder）能选的最高清晰度（短边）。
-     *
-     * <p>实测 TCL 25053RT47C（MTK MT5879，4 核 A55）上 1080p 竖屏 AV1 软解根本跑不动；
-     * 该集服务端只下发 AV1 时，留 360/480 这两档至少能看，而不是直接告诉用户「无法解码」。
-     */
-    private static final int SOFT_AV1_MAX_HEIGHT = 480;
+            "该集片源只有 AV1（bytevc2）编码，当前版本无法播放，请换一集或反馈给开发者";
 
     private static final Charset UTF8 = Charset.forName("UTF-8");
 
@@ -772,11 +769,6 @@ public final class NetClient {
         return av1SupportLevel() >= 2;
     }
 
-    /** 设备是否「只有 AOSP 软解 AV1」（能解，但 1080p 在电视 SoC 上扛不住）。 */
-    private static synchronized boolean deviceSupportsAv1SoftOnly() {
-        return av1SupportLevel() == 1;
-    }
-
     private static synchronized int av1SupportLevel() {
         if (av1SupportLevelCache >= 0) return av1SupportLevelCache;
         int level = 0;
@@ -825,7 +817,7 @@ public final class NetClient {
     /** AV1 能力的中文描述（日志用）。 */
     private static String av1LevelDesc() {
         int level = av1SupportLevel();
-        return level == 2 ? "硬解" : (level == 1 ? "仅软解≤" + SOFT_AV1_MAX_HEIGHT + "P" : "无");
+        return level == 2 ? "硬解" : (level == 1 ? "仅软解(加密片源不可用)" : "无");
     }
 
     public static final class VideoModel {
@@ -2149,7 +2141,6 @@ public final class NetClient {
         StringBuilder rawDesc = new StringBuilder();
         int skippedBvc2 = 0;
         final boolean av1Ok = deviceSupportsAv1();
-        final boolean av1SoftOnly = !av1Ok && deviceSupportsAv1SoftOnly();
         for (JSONObject v : videoListVariants(model)) {
             JSONObject meta = v.optJSONObject("video_meta");
             String codec = meta == null ? "" : meta.optString("codec_type", "").toLowerCase();
@@ -2157,17 +2148,6 @@ public final class NetClient {
             int shortSide = meta == null ? rawQuality : qualityShortSide(meta, rawQuality);
             rawDesc.append(' ').append(codec.isEmpty() ? "?" : codec).append('@')
                     .append(qualityDesc(rawQuality, shortSide));
-            if (codec.contains("bytevc2") || codec.contains("bvc2")) {
-                // 无 AV1 解码器 → 全剔；只有 AOSP 软解 → 只留小档（1080p 软解必卡）
-                if (!av1Ok && !av1SoftOnly) {
-                    skippedBvc2++;
-                    continue;
-                }
-                if (av1SoftOnly && shortSide > SOFT_AV1_MAX_HEIGHT) {
-                    skippedBvc2++;
-                    continue;
-                }
-            }
             List<String> addrs = extractMediaAddresses(v);
             if (addrs.isEmpty()) continue;
 
@@ -2185,6 +2165,15 @@ public final class NetClient {
                     AppLog.INSTANCE.e(TAG, "videoModel 密钥派生失败，跳过该变体", e);
                     continue;
                 }
+            }
+
+            // AV1（bytevc2）判定放在密钥解析之后：加密 AV1 必须本地重封装，而重封装
+            // 只改 stsd 的 4CC、生成不了 AV1 必需的 av1C 配置盒，MediaExtractor 认不出
+            // 视频轨 → 「只有声音」（2.0.13 线上复现）。故加密 AV1 一律剔除；
+            // 只有明文 AV1 且设备有硬解时才保留（不经重封装，可直接流播）。
+            if ((codec.contains("bytevc2") || codec.contains("bvc2")) && (encrypted || !av1Ok)) {
+                skippedBvc2++;
+                continue;
             }
 
             variants.add(new Variant(codec, shortSide, rawQuality, addrs, cencKey, encrypted));
@@ -2217,7 +2206,7 @@ public final class NetClient {
             if (keyErr != null) {
                 throw new Exception("HG媒体密钥不可用（片源解密失败），请换一集或稍后再试");
             }
-            throw new Exception(skippedBvc2 > 0 && av1SupportLevel() == 0
+            throw new Exception(skippedBvc2 > 0
                     ? AV1_ONLY_MSG : "没有电视可播放的清晰度");
         }
         AppLog.INSTANCE.d(TAG, "【检验环节1】video_model 直读原始下发:" + rawDesc
@@ -2271,7 +2260,6 @@ public final class NetClient {
         StringBuilder rawDesc = new StringBuilder();
         int skippedBvc2 = 0;
         final boolean av1Ok = deviceSupportsAv1();
-        final boolean av1SoftOnly = !av1Ok && deviceSupportsAv1SoftOnly();
         for (java.util.Iterator<String> kit = videoList.keys(); kit.hasNext();) {
             String key = kit.next();
             JSONObject v = videoList.optJSONObject(key);
@@ -2281,18 +2269,6 @@ public final class NetClient {
             int shortSide = qualityShortSide(v, rawQuality);
             rawDesc.append(' ').append(key).append('=').append(codec).append('@')
                     .append(qualityDesc(rawQuality, shortSide));
-            // AV1（bytevc2）：无解码器全剔；只有 AOSP 软解（c2.android.av1.decoder）时
-            // 只留小档——1080p 竖屏 AV1 软解在电视 SoC 上必卡，2.0.10 还因此黑屏「只有声音」。
-            if ("bytevc2".equals(codec) || "bvc2".equals(codec)) {
-                if (!av1Ok && !av1SoftOnly) {
-                    skippedBvc2++;
-                    continue;
-                }
-                if (av1SoftOnly && shortSide > SOFT_AV1_MAX_HEIGHT) {
-                    skippedBvc2++;
-                    continue;
-                }
-            }
             String main = cleanUrl(v.optString("main_url", ""));
             if (main.isEmpty()) continue;
             if (seedBytes != null) {
@@ -2317,6 +2293,12 @@ public final class NetClient {
                     continue;
                 }
             }
+            // 同直读路径：加密 AV1 剔除（重封装生成不了 av1C），明文 AV1 按硬解能力保留。
+            if ((codec.contains("bytevc2") || codec.contains("bvc2")) && (encrypted || !av1Ok)) {
+                skippedBvc2++;
+                continue;
+            }
+
             List<String> urls = new ArrayList<>();
             urls.add(main);
             variants.add(new Variant(codec, shortSide, rawQuality, urls, cencKey, encrypted));
@@ -2324,9 +2306,9 @@ public final class NetClient {
         AppLog.INSTANCE.d(TAG, "【检验环节1】fallback 原始下发 " + videoList.length()
                 + " 档:" + rawDesc + (skippedBvc2 > 0
                 ? " | bytevc2 剔除 " + skippedBvc2 + " 档（AV1 能力=" + av1LevelDesc() + "）" : ""));
-        // 只剩 AV1 且本机连软解都没有时给准确结论（服务端确实没下发别的档位）
+        // 只剩 AV1（加密）时给准确结论（服务端确实没下发别的可播档位）
         if (variants.isEmpty()) {
-            throw new Exception(skippedBvc2 > 0 && av1SupportLevel() == 0
+            throw new Exception(skippedBvc2 > 0
                     ? AV1_ONLY_MSG : "没有电视可播放的清晰度");
         }
 
