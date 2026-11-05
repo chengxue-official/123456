@@ -1661,13 +1661,10 @@ public final class NetClient {
                 : "，年龄未知"));
 
         JSONObject bizParam = new JSONObject();
-        bizParam.put("detail_page_version", 0);
-        bizParam.put("device_level", 3);
-        bizParam.put("disable_digg_stat", false);
+        // 与 HGTV（minireel.go:664-667）一比一对齐：只带这两个字段。
+        // 旧实现多带的 device_level=3 / use_os_player / use_server_dns / detail_page_version
+        // 等电视端字段让服务端按省带宽策略下发 AV1（线上 eukw0zdpeu 同一 vid 5 档全 bytevc2）。
         bizParam.put("need_all_video_definition", true);
-        bizParam.put("need_mp4_align", false);
-        bizParam.put("use_os_player", false);
-        bizParam.put("use_server_dns", false);
         // video_platform 决定服务端下发哪种编码：HGTV（Go 核心，minireel.go）用的是 3，
         // 同一批 AV1-only 剧在它那边拿到的都是 HEVC；我们长期用 1024（电视端值），
         // 服务端给的是 AV1（bytevc2）。线上 ggy6xte6gg 已证 1024 下这部剧几乎全是 AV1。
@@ -1676,8 +1673,11 @@ public final class NetClient {
 
         JSONObject body = new JSONObject();
         body.put("video_id", vid);
+        // HGTV 带着 content_type=1（minireel.go:665），旧实现漏了这个字段。
+        body.put("content_type", 1);
         body.put("biz_param", bizParam);
         byte[] payload = body.toString().getBytes(UTF8);
+        AppLog.INSTANCE.d(TAG, "取流请求体 " + body);
 
         Exception lastError = null;
         // 区分「网关/身份拦截」（全部 200 + 空 body）与「真·没数据」：
@@ -1797,7 +1797,8 @@ public final class NetClient {
             try {
                 JSONObject legacyBiz = new JSONObject();
                 legacyBiz.put("need_all_video_definition", true);
-                legacyBiz.put("video_platform", 1024);
+                // 与主路径保持一致，避免兜底又走回 1024（该值会让服务端下发 AV1）。
+                legacyBiz.put("video_platform", 3);
                 JSONObject map = new JSONObject();
                 map.put("1004", new JSONArray().put(vid));
                 JSONObject legacy = new JSONObject();
