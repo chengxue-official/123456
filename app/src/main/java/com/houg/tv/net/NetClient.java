@@ -1415,6 +1415,11 @@ public final class NetClient {
      * 再扫双引号属性（形态二嵌套在 routerDataFnArgs[0] 字符串里）。
      */
     private static JSONObject extractRankContent(String html) {
+        // 形态三（2026-11 起线上）：数据在 <script>_ROUTER_DATA = {...}</script> 的
+        // loaderData["rank_<board>/page"].content 里；data-fn-args 只剩导航 key，
+        // 旧解析因此返回 null → 榜单页一直「加载不出来」。
+        JSONObject routed = extractRankFromRouterData(html);
+        if (routed != null) return routed;
         // 形态二（单引号）：data-fn-args='[key, "content", {isSuccess, rankList...}]'
         Matcher sq = RANK_FN_ARGS_SQ.matcher(html);
         while (sq.find()) {
@@ -1441,6 +1446,75 @@ public final class NetClient {
                 if (v instanceof JSONObject && ((JSONObject) v).has("rankList")) {
                     return (JSONObject) v;
                 }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 从 {@code _ROUTER_DATA = {...}} 对象字面量里取榜单 content。
+     *
+     * <p>站点结构：{@code loaderData["rank_<board>/page"].content}
+     * 含 {@code isSuccess / rankList / pagination}，与旧形态的数据对象一致。
+     */
+    private static JSONObject extractRankFromRouterData(String html) {
+        int idx = html.indexOf("_ROUTER_DATA");
+        if (idx < 0) return null;
+        int eq = html.indexOf('=', idx);
+        if (eq < 0) return null;
+        int start = -1;
+        for (int i = eq + 1; i < html.length(); i++) {
+            char c = html.charAt(i);
+            if (c == ' ' || c == '\t' || c == '\r' || c == '\n') continue;
+            if (c == '{') start = i;
+            break;
+        }
+        if (start < 0) return null;
+        String json = balancedObject(html, start);
+        if (json == null) return null;
+        try {
+            JSONObject root = new JSONObject(json);
+            JSONObject loader = root.optJSONObject("loaderData");
+            if (loader == null) return null;
+            java.util.Iterator<String> keys = loader.keys();
+            while (keys.hasNext()) {
+                String k = keys.next();
+                if (k == null || !k.startsWith("rank_") || !k.endsWith("/page")) continue;
+                JSONObject page = loader.optJSONObject(k);
+                if (page == null) continue;
+                JSONObject content = page.optJSONObject("content");
+                if (content != null && content.has("rankList")) return content;
+            }
+        } catch (Throwable ignored) {
+            // 结构再变就回落到旧的两种形态
+        }
+        return null;
+    }
+
+    /** 从 start（'{' 位置）截取括号配平的 JSON 对象；字符串内的括号/转义不计入。 */
+    private static String balancedObject(String s, int start) {
+        int depth = 0;
+        boolean inStr = false;
+        boolean esc = false;
+        for (int i = start; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (inStr) {
+                if (esc) {
+                    esc = false;
+                } else if (c == '\\') {
+                    esc = true;
+                } else if (c == '"') {
+                    inStr = false;
+                }
+                continue;
+            }
+            if (c == '"') {
+                inStr = true;
+            } else if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) return s.substring(start, i + 1);
             }
         }
         return null;
