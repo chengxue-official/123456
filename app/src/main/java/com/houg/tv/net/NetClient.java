@@ -84,16 +84,14 @@ public final class NetClient {
                     + "若反复出现，等几分钟再试通常可恢复。";
 
     /**
-     * 该集只下发了 AV1(bytevc2)，且本机没有可用的 AV1 解码能力：确实没有可播档位。
+     * 该集只下发了 bytevc2，而 bytevc2 是字节自研的 ByteVC2（H.266/VVC 家族）编码，
+     * Android 侧没有任何可用解码器（连第三方播放器也标为不可播），确实没有可播档位。
      *
-     * <p>同时作为「换一次重取」的判定依据——服务端下发编码集偶发随节点变化，
-     * 重取一次可能拿到 HEVC；仍只有 AV1 才把这个结论交给用户。
+     * <p>正常路径不会走到这里：取流地址会被改写成 {@code codec_type=1}（h265_hvc1）
+     * 拿 HEVC，见 {@link #preferHevcCodec(String)}。只有服务端连 h265 都没有时才兜底报这句。
      */
     private static final String AV1_ONLY_MSG =
-            "该集片源只有 AV1（bytevc2）编码，本机无法播放，请换一集或反馈给开发者";
-
-    /** 「仅软解 AV1」的设备能选的最高清晰度（短边）：1080p 竖屏 AV1 软解在电视 SoC 上扛不住。 */
-    private static final int SOFT_AV1_MAX_HEIGHT = 480;
+            "该集片源只有 VVC（bytevc2）编码，本机无法播放，请换一集或反馈给开发者";
 
     private static final Charset UTF8 = Charset.forName("UTF-8");
 
@@ -697,9 +695,12 @@ public final class NetClient {
         return 0;
     }
 
-    /** codec_type 是否为 HEVC（HG下发的 bytevc1 即 H.265）。 */
+    /** codec_type 是否为 HEVC：bytevc1（HG传统写法）/ h265（codec_type=1 的写法）。 */
     private static boolean isHevc(String codec) {
-        return codec != null && codec.toLowerCase().contains("bytevc1");
+        if (codec == null) return false;
+        String c = codec.toLowerCase();
+        return c.contains("bytevc1") || c.contains("h265") || c.contains("hevc")
+                || c.contains("hvc1");
     }
 
     /**
@@ -765,77 +766,6 @@ public final class NetClient {
         AppLog.INSTANCE.d(TAG, "设备 HEVC 硬解能力=" + ok);
         hevcSupportedCache = ok;
         return ok;
-    }
-
-    /**
-     * 设备是否有 AV1(video/av01) 解码能力，0=无 / 1=只有 AOSP 软解 / 2=有硬解（结果缓存）。
-     *
-     * <p>为什么要探测：旧实现对 bytevc2(AV1) 是**无条件剔除**的——电视端确实大多
-     * 没有 AV1 解码器，但 2022 年后的部分 SoC（Amlogic S905X4 / 联发科 MT9xxx 等）
-     * 已经带 AV1 硬解。遇到「该集服务端只下发 AV1」的片源时，这些机器本可以直接播，
-     * 却被我们一律跳过，报「本机无法解码」——是假故障。
-     *
-     * <p>为什么还分「只有软解」：2020-2021 年的 MTK 电视（如 TCL 25053RT47C）带
-     * {@code c2.android.av1.decoder}（AOSP 软解），旧名单只排 google/software/sw./ffmpeg，
-     * 把它当成了<b>硬解</b>，于是选了 1080p AV1，2.0.10 的 remux 又把 encv 写成 hvc1 —
-     * 线上表现为「该集没有可解码的视频轨（只有声音）」。这类机器只保留小档。
-     */
-    private static int av1SupportLevelCache = -1;
-
-    /** 设备是否具备 AV1 硬解（口径与 {@link #deviceSupportsHevc()} 一致，软解不计入）。 */
-    private static synchronized boolean deviceSupportsAv1() {
-        return av1SupportLevel() >= 2;
-    }
-
-    private static synchronized int av1SupportLevel() {
-        if (av1SupportLevelCache >= 0) return av1SupportLevelCache;
-        int level = 0;
-        try {
-            for (MediaCodecInfo info : new MediaCodecList(MediaCodecList.REGULAR_CODECS)
-                    .getCodecInfos()) {
-                if (info.isEncoder()) continue;
-                boolean hasAv1 = false;
-                for (String type : info.getSupportedTypes()) {
-                    if ("video/av01".equalsIgnoreCase(type)) {
-                        hasAv1 = true;
-                        break;
-                    }
-                }
-                if (!hasAv1) continue;
-                if (isSoftwareDecoder(info.getName())) {
-                    level = Math.max(level, 1);
-                } else {
-                    level = 2;
-                    break;
-                }
-            }
-        } catch (Throwable t) {
-            level = 0;
-        }
-        AppLog.INSTANCE.d(TAG, "设备 AV1 能力="
-                + (level == 2 ? "硬解" : level == 1 ? "仅软解" : "无"));
-        av1SupportLevelCache = level;
-        return level;
-    }
-
-    /**
-     * 是否为 AOSP/Google 的纯软解解码器。
-     *
-     * <p>{@code c2.android.*} 是 Codec2 的软件实现（libcodec2_soft_*），与厂商硬解
-     * {@code c2.mtk.* / c2.qti.* / OMX.MTK.*} 必须区分开——把它们当硬解会让 1080p
-     * 软解硬扛，线上实测黑屏、OOM 与「只有声音」都由此而来。
-     */
-    private static boolean isSoftwareDecoder(String codecName) {
-        String name = codecName.toLowerCase();
-        return name.contains("google") || name.contains("software")
-                || name.contains("sw.") || name.contains("ffmpeg")
-                || name.contains("c2.android.");
-    }
-
-    /** AV1 能力的中文描述（日志用）。 */
-    private static String av1LevelDesc() {
-        int level = av1SupportLevel();
-        return level == 2 ? "硬解" : (level == 1 ? "仅软解(加密片源不可用)" : "无");
     }
 
     public static final class VideoModel {
@@ -2266,10 +2196,9 @@ public final class NetClient {
             }
         }
 
-        // 收集可播变体（h264 / bytevc1/HEVC，设备支持 AV1 时再含 bytevc2），
-        // 再按设备解码能力排序选择。
-        // 2026-11-01：bytevc2 由「无条件剔除」改为「设备有 AV1 硬解才保留」——
-        // 只下发 AV1 的剧集在有 AV1 硬解的机器上本就能播。
+        // 收集可播变体（h264 / h265·bytevc1=HEVC），再按设备解码能力排序选择。
+        // 2026-11-11：bytevc2（ByteVC2/VVC）在 Android 无解码器，已改由取流地址
+        // codec_type=1 直接要 h265，见 preferHevcCodec()。
         List<Variant> variants = new ArrayList<>();
         // 服务端本集全部可播档位（编码过滤之前）：给清晰度菜单用，避免把本机
         // 探测误判成「无 HEVC」后，用户连 720/1080 的选项都看不到。
@@ -2278,7 +2207,6 @@ public final class NetClient {
         // 【检验环节1】直读路径同样记录原始档位（fallback 失败回退到这里时能看到全貌）
         StringBuilder rawDesc = new StringBuilder();
         int skippedBvc2 = 0;
-        final int av1Level = av1SupportLevel();
         for (JSONObject v : videoListVariants(model)) {
             JSONObject meta = v.optJSONObject("video_meta");
             String codec = meta == null ? "" : meta.optString("codec_type", "").toLowerCase();
@@ -2305,19 +2233,12 @@ public final class NetClient {
                 }
             }
 
-            // AV1（bytevc2）：
-            //   - **加密**的 AV1 一律剔除。加密片源必须本地解密+重封装成普通 mp4，而
-            //     服务端用的是字节私有配置盒 bv2C（不是标准 av1C），重封装后播放器
-            //     要么判「没有视频轨」（只有声音），要么 ERROR_CODE_IO_UNSPECIFIED。
-            //     线上 au20esnxau / eukw0zdpeu 反复验证：硬解设备也出不了画面。
-            //   - 明文的 AV1 直接交给播放器，按设备解码能力保留（软解只留小档）。
+            // bytevc2 = 字节自研 ByteVC2（H.266/VVC 家族），Android 侧没有可用解码器，
+            // 一律剔除；正常取流已在 fallback 那跳把 codec_type 改成 1（h265_hvc1），
+            // 见 {@link #preferHevcCodec(String)}，这里只兜底服务端连 h265 都没给的集。
             if (codec.contains("bytevc2") || codec.contains("bvc2")) {
-                if (encrypted
-                        || av1Level == 0
-                        || (av1Level == 1 && shortSide > SOFT_AV1_MAX_HEIGHT)) {
-                    skippedBvc2++;
-                    continue;
-                }
+                skippedBvc2++;
+                continue;
             }
             if (shortSide > 0) allHeights.add(shortSide);
 
@@ -2346,7 +2267,7 @@ public final class NetClient {
         if (variants.isEmpty()) {
             AppLog.INSTANCE.d(TAG, "【检验环节1】video_model 直读原始下发:" + rawDesc
                     + (skippedBvc2 > 0
-                    ? " | bytevc2 剔除 " + skippedBvc2 + " 档（AV1 能力=" + av1LevelDesc() + "）" : "")
+                    ? " | bytevc2 剔除 " + skippedBvc2 + " 档（VVC，Android 无解码器）" : "")
                     + " → 全部不可播");
             if (keyErr != null) {
                 throw new Exception("HG媒体密钥不可用（片源解密失败），请换一集或稍后再试");
@@ -2356,7 +2277,7 @@ public final class NetClient {
         }
         AppLog.INSTANCE.d(TAG, "【检验环节1】video_model 直读原始下发:" + rawDesc
                 + (skippedBvc2 > 0
-                ? " | bytevc2 剔除 " + skippedBvc2 + " 档（AV1 能力=" + av1LevelDesc() + "）" : ""));
+                ? " | bytevc2 剔除 " + skippedBvc2 + " 档（VVC，Android 无解码器）" : ""));
 
         int duration = parseDoubleInt(model.opt("video_duration"));
         if (duration <= 0) duration = parseDoubleInt(model.opt("duration"));
@@ -2372,18 +2293,36 @@ public final class NetClient {
     }
 
     /**
+     * 把取流地址里的 {@code codec_type} 改写成 1（h265_hvc1）。
+     *
+     * <p>实测（2026-11-11）：同一条 fallback 地址只改这一个参数，服务端就会换编码——
+     * {@code 1} → h265（{@code gear_des_key} 写 {@code 2:h265_hvc1}）、{@code 3} → bytevc1、
+     * {@code 2/4/0/5..9} → bytevc2。服务端默认给 4，于是「只有 VVC」的集在 Android 上
+     * 必然报「本机无法播放」：VVC(H.266) 在 Android 侧没有解码器，连 yt-dlp 都直接把
+     * bytevc2 标为不可播。改要 h265 后这类集与其它集走同一条 CENC→HEVC 链路，
+     * 我们现有的解密重封装、HEVC 选档全部适用。
+     */
+    private static String preferHevcCodec(String url) {
+        if (url == null || url.isEmpty()) return url;
+        if (url.contains("codec_type=")) {
+            return url.replaceAll("([?&])codec_type=\\d+", "$1codec_type=1");
+        }
+        return url + (url.contains("?") ? "&" : "?") + "codec_type=1";
+    }
+
+    /**
      * 走 {@code fallback_api} 第二跳取流：新路由 {@code video_model/v1} 的可用资源
      * 就在这个地址（video_model 自带的 video_list 多为占位数据）。
      *
      * <p>对应 HGTV {@code stream()}：普通 GET（播放器 UA，免签名）得到
-     * {@code video_info.data.{key_seed, video_list{...}}}；跳过 AV1（bytevc2/bvc2），
+     * {@code video_info.data.{key_seed, video_list{...}}}；跳过 VVC（bytevc2/bvc2），
      * 清晰度按 {@code quality_desc → height → vheight → quality → key} 依次兜底；
      * {@code key_seed} 非空则用 {@link MediaCrypto#decryptUrl} 解出真实地址，
      * {@code spade_a} 非空则派生 16 字节 CENC 内容密钥。
      */
     private VideoModel fallbackStreamModel(String vid, JSONObject model, int maxHeight,
                                            boolean allowUnsupported) throws Exception {
-        String fallback = resolveFallbackApi(model);
+        String fallback = preferHevcCodec(resolveFallbackApi(model));
         String text = getPlaybackText(fallback);
         JSONObject info = new JSONObject(text).optJSONObject("video_info");
         if (info != null) info = info.optJSONObject("data");
@@ -2408,7 +2347,6 @@ public final class NetClient {
         // 真机排查「某集播不了」先看这条：资源到底给了什么、剔完剩什么。
         StringBuilder rawDesc = new StringBuilder();
         int skippedBvc2 = 0;
-        final int av1Level = av1SupportLevel();
         for (java.util.Iterator<String> kit = videoList.keys(); kit.hasNext();) {
             String key = kit.next();
             JSONObject v = videoList.optJSONObject(key);
@@ -2442,17 +2380,10 @@ public final class NetClient {
                     continue;
                 }
             }
-            // 同直读路径的 AV1 分级策略；**加密 AV1 一律剔除**——
-            // 加密片源要本地解密 + 重封装，而服务端用私有 bv2C 配置盒，重封装成
-            // av01 后播放器必然 ERROR_CODE_IO_UNSPECIFIED（2.0.19 只修了直读路径，
-            // fallback 这条真实取流路径漏了 encrypted 判断，2.1 线上继续复现）。
+            // bytevc2 = ByteVC2（H.266/VVC），Android 无解码器，一律剔除
             if (codec.contains("bytevc2") || codec.contains("bvc2")) {
-                if (encrypted
-                        || av1Level == 0
-                        || (av1Level == 1 && shortSide > SOFT_AV1_MAX_HEIGHT)) {
-                    skippedBvc2++;
-                    continue;
-                }
+                skippedBvc2++;
+                continue;
             }
 
             if (shortSide > 0) allHeights.add(shortSide);
@@ -2463,7 +2394,7 @@ public final class NetClient {
         }
         AppLog.INSTANCE.d(TAG, "【检验环节1】fallback 原始下发 " + videoList.length()
                 + " 档:" + rawDesc + (skippedBvc2 > 0
-                ? " | bytevc2 剔除 " + skippedBvc2 + " 档（AV1 能力=" + av1LevelDesc() + "）" : ""));
+                ? " | bytevc2 剔除 " + skippedBvc2 + " 档（VVC，Android 无解码器）" : ""));
         // 只剩 AV1（加密）时给准确结论（服务端确实没下发别的可播档位）
         if (variants.isEmpty()) {
             throw new Exception(skippedBvc2 > 0

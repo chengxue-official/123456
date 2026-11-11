@@ -561,7 +561,10 @@ class PlayerActivity : AppCompatActivity() {
                     // 线上 6560MB 的 DWIN-380P 软解 1924p 能 READY（日志 18:58:31）——
                     // 守卫按内存放宽：总内存 ≥3GB 允许高分辨率软解自救，播着卡也比报错强；
                     // 读不到内存（-1）仍按低内存保守拒绝。低档位（≤480p）始终允许自救。
-                    if (currentVariantCodec.contains("bytevc1") && currentVariantHeight > 480 && !softDecodeViable()) {
+                    val hevcCodec = currentVariantCodec.contains("bytevc1")
+                            || currentVariantCodec.contains("h265")
+                            || currentVariantCodec.contains("hevc")
+                    if (hevcCodec && currentVariantHeight > 480 && !softDecodeViable()) {
                         AppLog.e("PlayerActivity", "HEVC " + currentVariantHeight
                                 + "p 软解预期 OOM（低内存设备，已重取流仍下发 HEVC），跳过软解自救 vid=" + vid, null)
                         showError(getString(R.string.decoder_hevc_soft_oom))
