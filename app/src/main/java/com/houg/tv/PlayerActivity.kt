@@ -1080,17 +1080,21 @@ class PlayerActivity : AppCompatActivity() {
                             + " vid=" + vid)
                 }
                 val video = withContext(Dispatchers.IO) {
-                    App.netClient.videoModel(vid, limit)
+                    // 显式选档（非「自动」）时允许试本机探测判为不可用的编码：
+                    // 有些 ROM 谎报/查询失败会把 1080P 电视判成「无 HEVC」，
+                    // 只留 H.264 的 360 档，用户看到「锁 360、手动切没用」。
+                    App.netClient.videoModel(vid, limit, qualityIndex != QUALITY_AUTO)
                 }
                 if (gen != playGen) return@launch
                 // 记录服务端实际给出的档位（服务端可能没有所请求档，会回退到最接近的）
                 currentVariantHeight = video.height
                 currentVariantCodec = video.codec
-                // 记录本集实际可用的清晰度集合（变体已在 NetClient 侧按设备能力过滤，
-                // 留下的都是本机可播的档位），清晰度菜单只显示这些档（D-02）
-                availableHeights = video.variants.map { it.height }.filter { it > 0 }.toSet()
-                // 【检验环节2】本集最终可用档位（已过滤 bytevc2/无 HEVC 变体）。
-                // 清晰度菜单只会出现这些档；若这里为空说明服务端没给可播资源。
+                // 记录本集实际可用的清晰度集合：优先用服务端全档位（设备编码过滤前），
+                // 这样即使本机探测误判「无 HEVC」，菜单里仍能看到 720/1080 并可手动切过去。
+                availableHeights = video.allHeights.filter { it > 0 }.toSet()
+                        .ifEmpty { video.variants.map { it.height }.filter { it > 0 }.toSet() }
+                // 【检验环节2】本集服务端总档位（编码过滤前）+ 实际选中档。
+                // 菜单按这里的档位展示；若为空说明服务端没给可播资源。
                 AppLog.d("PlayerActivity", "【检验环节2】取流 vid=$vid 上限=" + limit
                         + "P 可用档=" + availableHeights.sortedDescending().joinToString("/") + "P"
                         + " 选中=" + video.height + "P codec=" + video.codec)
@@ -2263,7 +2267,8 @@ class PlayerActivity : AppCompatActivity() {
                     try {
                         AppLog.d("PlayerActivity", "预加载 pos=$pos vid=$vid")
                         val video = withContext(Dispatchers.IO) {
-                            App.netClient.videoModel(vid, maxVariantHeight())
+                            App.netClient.videoModel(vid, maxVariantHeight(),
+                                    qualityIndex != QUALITY_AUTO)
                         }
                         withContext(Dispatchers.IO) {
                             // ⚠️ 与 prepareClearFile 保持一致：明文变体（encrypted=false）

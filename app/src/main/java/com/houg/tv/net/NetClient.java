@@ -644,8 +644,11 @@ public final class NetClient {
      *    但 H.264 与 HEVC 同高度时优先 H.264——兼容性优先，避免软解兜底翻车。
      * H.264 缺失时仍返回 HEVC，不做强制丢弃（否则老片源可能无源可播）。
      */
-    private static void sortVariantsForDevice(List<Variant> variants) {
-        final boolean hevcOk = deviceSupportsHevc();
+    private static void sortVariantsForDevice(List<Variant> variants, boolean allowUnsupported) {
+        // 用户显式选档（非「自动」）时允许试 HEVC：ROM 谎报/查询失败会把 1080P 电视
+        // 误判成「无 HEVC」，只留 H.264 的 360 档，用户看到的就是「锁 360、手动切没用」。
+        // 运行期真正解失败过（hevcVetoed）则不再放行，避免反复黑屏。
+        final boolean hevcOk = !hevcVetoed && (allowUnsupported || deviceSupportsHevc());
         boolean ascending = false;
         if (!hevcOk) {
             List<Variant> avcOnly = new ArrayList<>();
@@ -709,6 +712,13 @@ public final class NetClient {
     private static Boolean hevcSupportedCache = null;
 
     /**
+     * 运行期 HEVC 否决（真正解不出来时置位）。与 {@link #hevcSupportedCache} 区分：
+     * 探测为 false 可能是 ROM 谎报/查询失败，用户显式选高清晰度时允许再试；
+     * 一旦运行期真的解码失败过，就不再让他试（避免反复黑屏）。
+     */
+    private static volatile boolean hevcVetoed = false;
+
+    /**
      * 运行期否决 HEVC：播放器实测「解码器初始化/解码失败」后调用。
      *
      * <p>为什么需要它：ROM 常谎报能力——{@link #deviceSupportsHevc} 是按
@@ -721,6 +731,7 @@ public final class NetClient {
      * 且播放页里仍可手动切软解自救）。
      */
     public static synchronized void disableHevc() {
+        hevcVetoed = true;
         if (hevcSupportedCache != null && !hevcSupportedCache) return;
         hevcSupportedCache = false;
         AppLog.INSTANCE.d(TAG, "运行期否决 HEVC：后续取流只选 H.264");
@@ -835,12 +846,15 @@ public final class NetClient {
         public final byte[] cencKey;        // 最优变体的 CENC-AES-128 密钥（未加密时为 null）
         public final boolean encrypted;     // 最优变体是否 CENC 加密
         public final List<Variant> variants; // 全部可选变体（按高度降序）
+        /** 服务端本集下发的全部可播档位短边（设备编码过滤之前），供清晰度菜单展示与手动切档。 */
+        public final java.util.Set<Integer> allHeights;
         public final String codec;          // 最优变体 codec
         public final int height;            // 最优变体高度
 
         VideoModel(String videoId, List<String> urls, int duration, String referer,
                    byte[] cencKey, boolean encrypted,
-                   List<Variant> variants, String codec, int height) {
+                   List<Variant> variants, java.util.Set<Integer> allHeights,
+                   String codec, int height) {
             this.videoId = videoId;
             this.urls = urls;
             this.duration = duration;
@@ -848,6 +862,7 @@ public final class NetClient {
             this.cencKey = cencKey;
             this.encrypted = encrypted;
             this.variants = variants;
+            this.allHeights = allHeights;
             this.codec = codec;
             this.height = height;
         }
@@ -2089,6 +2104,16 @@ public final class NetClient {
      *                  仅当存在不超过上限的变体时才过滤，保证任何设备都有可播源。
      */
     public VideoModel videoModel(String vid, int maxHeight) throws Exception {
+        return videoModel(vid, maxHeight, false);
+    }
+
+    /**
+     * @param allowUnsupported true = 用户显式选了清晰度档（非「自动」）：允许使用本机
+     *                         能力探测判为不可用、但服务端确实下发的编码（主要是 HEVC）。
+     *                         ROM 谎报会让 1080P 电视被误判成「无 HEVC」，只留 360 的
+     *                         H.264；显式选档时应给用户重试的机会。
+     */
+    public VideoModel videoModel(String vid, int maxHeight, boolean allowUnsupported) throws Exception {
         AppLog.INSTANCE.d(TAG, "videoModel video_id=" + vid);
         // BUG-104：身份拦截判定必须是「本次取流局部」的——NetClient 是全局单例，
         // 起播与预取下一集并发时，实例字段会被另一路请求的结果覆盖。
@@ -2101,7 +2126,7 @@ public final class NetClient {
         // 本项目口径是全剧集免费，兜底链只剩反作用；失败直接把 App 通道的真实原因上抛。
         Exception appErr;
         try {
-            return appVideoModel(vid, maxHeight, appBlocked);
+            return appVideoModel(vid, maxHeight, allowUnsupported, appBlocked);
         } catch (Exception first) {
             appErr = first;
         }
@@ -2126,7 +2151,7 @@ public final class NetClient {
                 }
                 AppLog.INSTANCE.d(TAG, "AV1 重取换身份 新 device_id=" + DeviceRegister.deviceId());
                 Thread.sleep(300L);
-                return appVideoModel(vid, maxHeight, appBlocked);
+                return appVideoModel(vid, maxHeight, allowUnsupported, appBlocked);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
             } catch (Exception retryErr) {
@@ -2144,7 +2169,8 @@ public final class NetClient {
         throw appErr;
     }
 
-    private VideoModel appVideoModel(String vid, int maxHeight, AtomicBoolean blockedOut) throws Exception {
+    private VideoModel appVideoModel(String vid, int maxHeight, boolean allowUnsupported,
+                                     AtomicBoolean blockedOut) throws Exception {
         boolean[] fromCache = new boolean[1];
         JSONObject model = cachedVideoModel(vid, blockedOut, fromCache);
         if (model == null) throw new Exception("HG播放信息为空");
@@ -2153,7 +2179,7 @@ public final class NetClient {
         // video_info.data.{key_seed, video_list{...}}，再按清晰度挑一档。
         // video_model 自带的 video_list 往往是占位数据，优先走这一跳。
         try {
-            VideoModel viaFallback = fallbackStreamModel(vid, model, maxHeight);
+            VideoModel viaFallback = fallbackStreamModel(vid, model, maxHeight, allowUnsupported);
             if (viaFallback != null) return viaFallback;
         } catch (Exception e) {
             AppLog.INSTANCE.e(TAG, "fallback_api 取流失败，回退 video_model 直读", e);
@@ -2162,7 +2188,7 @@ public final class NetClient {
                 // 重取后 fromCache 为 false，不会再递归下去。
                 AppLog.INSTANCE.d(TAG, "缓存的 fallback_api 已失效，重新取流 vid=" + vid);
                 invalidatePlayModel(vid);
-                return appVideoModel(vid, maxHeight, blockedOut);
+                return appVideoModel(vid, maxHeight, allowUnsupported, blockedOut);
             }
         }
 
@@ -2171,6 +2197,9 @@ public final class NetClient {
         // 2026-11-01：bytevc2 由「无条件剔除」改为「设备有 AV1 硬解才保留」——
         // 只下发 AV1 的剧集在有 AV1 硬解的机器上本就能播。
         List<Variant> variants = new ArrayList<>();
+        // 服务端本集全部可播档位（编码过滤之前）：给清晰度菜单用，避免把本机
+        // 探测误判成「无 HEVC」后，用户连 720/1080 的选项都看不到。
+        java.util.Set<Integer> allHeights = new java.util.HashSet<>();
         Exception keyErr = null;
         // 【检验环节1】直读路径同样记录原始档位（fallback 失败回退到这里时能看到全貌）
         StringBuilder rawDesc = new StringBuilder();
@@ -2216,11 +2245,12 @@ public final class NetClient {
                     continue;
                 }
             }
+            if (shortSide > 0) allHeights.add(shortSide);
 
             variants.add(new Variant(codec, shortSide, rawQuality, addrs, cencKey, encrypted));
         }
         // 先按设备解码能力筛/排序（不支持 HEVC 的设备只留 H.264），再套清晰度上限
-        sortVariantsForDevice(variants);
+        sortVariantsForDevice(variants, allowUnsupported);
 
         // ===== 低端设备:限制清晰度上限 =====
         // 1080p HEVC 在 Android 5.x / 小内存设备上硬解余量极小,倍速(≥1.5x)或
@@ -2263,7 +2293,8 @@ public final class NetClient {
                 + " urls=" + selected.urls.size() + " duration=" + duration
                 + (cappedHeight > 0 ? " [低端设备限高 " + maxHeight + "p，已从 " + cappedHeight + "p 降档]" : ""));
         return new VideoModel(vid, selected.urls, duration, "https://novel.snssdk.com/",
-                selected.cencKey, selected.encrypted, variants, selected.codec, selected.height);
+                selected.cencKey, selected.encrypted, variants, allHeights,
+                selected.codec, selected.height);
     }
 
     /**
@@ -2276,7 +2307,8 @@ public final class NetClient {
      * {@code key_seed} 非空则用 {@link MediaCrypto#decryptUrl} 解出真实地址，
      * {@code spade_a} 非空则派生 16 字节 CENC 内容密钥。
      */
-    private VideoModel fallbackStreamModel(String vid, JSONObject model, int maxHeight) throws Exception {
+    private VideoModel fallbackStreamModel(String vid, JSONObject model, int maxHeight,
+                                           boolean allowUnsupported) throws Exception {
         String fallback = resolveFallbackApi(model);
         String text = getPlaybackText(fallback);
         JSONObject info = new JSONObject(text).optJSONObject("video_info");
@@ -2296,6 +2328,8 @@ public final class NetClient {
         }
 
         List<Variant> variants = new ArrayList<>();
+        // 服务端本集全部可播档位（编码过滤之前），供清晰度菜单展示
+        java.util.Set<Integer> allHeights = new java.util.HashSet<>();
         // 【检验环节1】服务端原始下发档位清单（含将被剔除的 bytevc2），
         // 真机排查「某集播不了」先看这条：资源到底给了什么、剔完剩什么。
         StringBuilder rawDesc = new StringBuilder();
@@ -2347,6 +2381,8 @@ public final class NetClient {
                 }
             }
 
+            if (shortSide > 0) allHeights.add(shortSide);
+
             List<String> urls = new ArrayList<>();
             urls.add(main);
             variants.add(new Variant(codec, shortSide, rawQuality, urls, cencKey, encrypted));
@@ -2360,7 +2396,7 @@ public final class NetClient {
                     ? AV1_ONLY_MSG : "没有电视可播放的清晰度");
         }
 
-        sortVariantsForDevice(variants);
+        sortVariantsForDevice(variants, allowUnsupported);
 
         // 上限匹配：maxHeight<=0（不限）时取最高档；>0 时取 ≤maxHeight 的最高档；
         // 全部超限才退到最低档当「兼容资源」。
@@ -2397,7 +2433,8 @@ public final class NetClient {
                 + selected.codec + " height=" + qualityDesc(selected.rawHeight, selected.height)
                 + " encrypted=" + selected.encrypted + " duration=" + duration);
         return new VideoModel(vid, selected.urls, duration, "https://novel.snssdk.com/",
-                selected.cencKey, selected.encrypted, variants, selected.codec, selected.height);
+                selected.cencKey, selected.encrypted, variants, allHeights,
+                selected.codec, selected.height);
     }
 
     /**

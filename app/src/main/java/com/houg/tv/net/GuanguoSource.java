@@ -245,8 +245,12 @@ public final class GuanguoSource {
         NetClient.Variant selected = variants.get(0);
         AppLog.INSTANCE.d(TAG, "videoModel vid=" + vid + " 档位=" + variants.size()
                 + " 选中=" + selected.height + "P url=" + abbreviate(selected.urls.get(0)));
+        java.util.Set<Integer> allHeights = new java.util.HashSet<Integer>();
+        for (NetClient.Variant v : variants) {
+            if (v.height > 0) allHeights.add(v.height);
+        }
         return new NetClient.VideoModel(vid, selected.urls, 0, BASE + "/",
-                null, false, variants, "h264", selected.height);
+                null, false, variants, allHeights, "h264", selected.height);
     }
 
     /** {@code gg:<oneId>:<order>} → [oneId, order]。 */
