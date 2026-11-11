@@ -2119,8 +2119,11 @@ public final class NetClient {
             // AV1 档，只重放这一跳拿到的还是 AV1。
             invalidatePlayModel(vid);
             try {
-                DeviceRegister.resetIdentity();
-                DeviceRegister.registerNow(client);
+                // 优先切预注册的备用身份（免注册）；没有备用身份才重置 + 重新注册。
+                if (!DeviceRegister.switchToBackup()) {
+                    DeviceRegister.resetIdentity();
+                    DeviceRegister.registerNow(client);
+                }
                 AppLog.INSTANCE.d(TAG, "AV1 重取换身份 新 device_id=" + DeviceRegister.deviceId());
                 Thread.sleep(300L);
                 return appVideoModel(vid, maxHeight, appBlocked);
@@ -2331,9 +2334,14 @@ public final class NetClient {
                     continue;
                 }
             }
-            // 同直读路径的 AV1 分级策略。
+            // 同直读路径的 AV1 分级策略；**加密 AV1 一律剔除**——
+            // 加密片源要本地解密 + 重封装，而服务端用私有 bv2C 配置盒，重封装成
+            // av01 后播放器必然 ERROR_CODE_IO_UNSPECIFIED（2.0.19 只修了直读路径，
+            // fallback 这条真实取流路径漏了 encrypted 判断，2.1 线上继续复现）。
             if (codec.contains("bytevc2") || codec.contains("bvc2")) {
-                if (av1Level == 0 || (av1Level == 1 && shortSide > SOFT_AV1_MAX_HEIGHT)) {
+                if (encrypted
+                        || av1Level == 0
+                        || (av1Level == 1 && shortSide > SOFT_AV1_MAX_HEIGHT)) {
                     skippedBvc2++;
                     continue;
                 }
