@@ -44,6 +44,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
@@ -150,6 +151,14 @@ public final class NetClient {
      * 把时间留给上层给用户一个明确结果。
      */
     private static final long APP_CHANNEL_BUDGET_MS = 25_000L;
+
+    /**
+     * 取流串行锁（HGTV 1.3.6.2 的 M0 信号量同款）：同一时刻只允许一个取流请求链在跑。
+     *
+     * <p>预取（详情页预热）与起播会并发调 fetchVideoModel；并发打同一批取流接口
+     * 等于自己把请求频率翻倍，最容易触发风控。锁内已带总预算，排队不会无限等待。
+     */
+    private static final Semaphore MODEL_FETCH_LOCK = new Semaphore(1, true);
 
     /** 网页版请求（榜单/搜索/详情）的尝试次数。域名单次成功率约六成，重试可推到 95%+。 */
     private static final int WEB_ATTEMPTS = 3;
@@ -1693,37 +1702,20 @@ public final class NetClient {
         int networkErrorCount = 0;
         int attemptCount = Math.min(APP_HOST_ATTEMPTS, HostPool.size());
         int start = HostPool.currentIndex();
-        // BUG-127：空 body 不是「身份被判废」，而是服务端按请求频率的瞬时抖动。
-        //
-        // 真机日志实证（docs/qa/applog-64bit.txt 2026-10-31，REDMI 25102RKBEC）：
-        //  · 同一域名、同一身份、同一 vid，空 6~13 次后**必定成功**（32 位包同样）；
-        //  · 6 个域名全都有空有成，空:成 ≈ 7:1 → 与域名、身份都无关；
-        //  · 一次 12 连空之后 resetIdentity + registerNow 才拿到数据，而日志里
-        //    「已使用 0 小时」说明身份一直在被无谓重置——新身份注册 13 秒后照样全空。
-        // 旧实现在第 1 轮 12 连空就换身份，等于：白扔一个服务端已认识的好身份、
-        // 多打一次注册请求、并且把 12 个请求以 60ms 间隔轰出去（自我放大风控）。
-        //
-        // 现策略（总预算 APP_CHANNEL_BUDGET_MS 不变）：
-        //  第 1 轮：原身份，6 域名 × 2 次，空响应后逐次小退避；
-        //  第 2 轮：不换身份，退避 2s 后原身份再来一轮（把重试摊到时间轴上）；
-        //  第 3 轮：仍全空才换新身份（兼容真正的身份黑名单），再做最后一轮。
-        // 【2026-11-04 策略调整】改为 HGTV 的思路：一个 device_id 只用于一次取流。
-        //
-        // HGTV（Go 核心）源码注释写得很直白：a video_model request consumes its
-        // device identity at the upstream。它每次取流前都注册一个全新身份，因此
-        // 既没有 200 空 body 墙，也很少下发 AV1。我们长期复用同一身份的结果是：
-        // 空 body 12~14s、部分集被按电视端省带宽策略降成 bytevc2（AV1）。
-        // 首次注册失败时沿用当前身份继续（下面三轮逻辑仍当兜底）。
+        // 取流策略（2026-11-11 对齐 HGTV 1.3.6.2 的「主身份 + 备用身份」模型）：
+        //  第 1 轮：沿用当前已注册身份，6 域名 × 2 次，空响应逐次小退避；
+        //  第 2 轮：整轮空 body → 切到预注册的备用身份（免注册、免风控计数）；
+        //  第 3 轮：仍全空才 resetIdentity + 注册全新身份（兼容真·身份黑名单）。
+        // 不再「每次取流前都注册新身份」：那会白扔服务端已认识的好身份、每集多付
+        // 一次注册耗时，并把请求频率推高（自我放大风控）。取流整体串行
+        // （HGTV 的取流信号量同款），避免预取与起播并发放大风控。
         try {
-            DeviceRegister.resetIdentity();
-            DeviceRegister.registerNow(client);
-            start = HostPool.currentIndex();
-            AppLog.INSTANCE.d(TAG, "取流前换新身份 device_id=" + DeviceRegister.deviceId()
-                    + " vid=" + vid);
-        } catch (Exception e) {
-            AppLog.INSTANCE.e(TAG, "取流前换新身份失败（沿用当前身份继续）", e);
+            MODEL_FETCH_LOCK.acquire();
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw ie;
         }
-
+        try {
         outer:
         for (int round = 1; round <= 3; round++) {
             for (int i = 0; i < attemptCount; i++) {
@@ -1755,6 +1747,8 @@ public final class NetClient {
                         // 诊断锚点：线上据此统计「空 body 多但最终成功」的比例。
                         AppLog.INSTANCE.d(TAG, "取流成功 round=" + round
                                 + " 空body=" + emptyBodyCount + " vid=" + vid);
+                        // 成功后后台补一个备用身份（池不满且冷却已过才会真正发请求）
+                        DeviceRegister.maybeRefillBackupsAsync(client);
                         return model;
                     }
                     lastError = new Exception("HG播放信息为空");
@@ -1771,10 +1765,18 @@ public final class NetClient {
                     break;
                 }
                 if (round == 1) {
-                    // 退避后用原身份再来一轮：空 body 多为瞬时抖动，换身份是无效动作。
-                    AppLog.INSTANCE.e(TAG, "第 1 轮全部 200 空 body（" + emptyBodyCount
-                            + " 次）→ 保留原身份，退避 2s 后重试", null);
-                    sleepQuiet(2000L);
+                    // HGTV 同款：整轮空 body 先切预注册的备用身份（免注册、免风控计数）；
+                    // 没有备用身份才退避后原身份重试（空 body 也可能只是瞬时抖动）。
+                    if (DeviceRegister.switchToBackup()) {
+                        AppLog.INSTANCE.e(TAG, "第 1 轮全部 200 空 body（" + emptyBodyCount
+                                + " 次）→ 切备用身份 device_id=" + DeviceRegister.deviceId(), null);
+                        start = HostPool.currentIndex();
+                        sleepQuiet(300L);
+                    } else {
+                        AppLog.INSTANCE.e(TAG, "第 1 轮全部 200 空 body（" + emptyBodyCount
+                                + " 次）→ 无备用身份，保留原身份退避 2s 重试", null);
+                        sleepQuiet(2000L);
+                    }
                 } else {
                     try {
                         DeviceRegister.resetIdentity();
@@ -1812,6 +1814,9 @@ public final class NetClient {
                 lastError = e;
                 networkErrorCount++; // BUG-105：网络级失败，不是「全空 body」指纹
             }
+        }
+        } finally {
+            MODEL_FETCH_LOCK.release();
         }
 
         // 一次非空响应都没拿到、且全是 200 空 body → 判定为设备身份/网络问题

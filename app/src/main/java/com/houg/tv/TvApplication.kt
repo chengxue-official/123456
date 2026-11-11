@@ -6,6 +6,8 @@ import com.houg.tv.data.WatchHistory
 import com.houg.tv.net.HttpClientProvider
 import com.houg.tv.net.NetClient
 import com.houg.tv.sign.DeviceRegister
+import com.houg.tv.sign.HostPool
+import com.houg.tv.sign.TncHostSource
 import com.houg.tv.util.AppLog
 import com.houg.tv.util.CrashLogger
 import com.houg.tv.util.DeviceInfo
@@ -26,6 +28,11 @@ object App {
         instance = app
         // 注入注册身份的上下文（读落盘 device_id/install_id），必须在 NetClient 之前
         DeviceRegister.attach(app)
+        // 注入域名池上下文：坏域名记忆落盘，重启后不再撞已知坏节点
+        HostPool.attach(app)
+        // TNC 动态域名：拉服务端下发的 API 主机（失败静默，沿用内置域名池）
+        TncHostSource.attach(app)
+        TncHostSource.refreshIfStaleAsync()
         netClient = NetClient(HttpClientProvider.get())
         // 注入季缓存落盘目录：同系列剧集 24h 缓存，冷启动也能复用（剧集更新极慢）
         netClient.setCacheDir(File(app.filesDir, "netcache"))

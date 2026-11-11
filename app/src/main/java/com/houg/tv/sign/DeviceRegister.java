@@ -268,6 +268,15 @@ public final class DeviceRegister {
     /* ==================== 请求构造与响应解析 ==================== */
 
     private static Result doRegister(OkHttpClient client, String url) throws Exception {
+        return doRegister(client, url, false);
+    }
+
+    /**
+     * @param freshClientIds true = 用全新的 cdid/openudid/clientudid 注册（备用身份用），
+     *                       且不覆盖当前主身份的设备特征。复用旧特征时服务端会回同一个
+     *                       device_id，等于没有备用身份。
+     */
+    private static Result doRegister(OkHttpClient client, String url, boolean freshClientIds) throws Exception {
         long now = System.currentTimeMillis();
 
         JSONObject header = new JSONObject();
@@ -298,10 +307,10 @@ public final class DeviceRegister {
         header.put("mcc_mnc", "46000");
         header.put("rom", rom());
         header.put("rom_version", romVersion());
-        header.put("cdid", prefs().getString("cdid", newUuid()));
+        header.put("cdid", freshClientIds ? newUuid() : prefs().getString("cdid", newUuid()));
         header.put("sig_hash", "56a962410c494bbaf0b58dba20cae56f");
-        header.put("openudid", openudid());
-        header.put("clientudid", prefs().getString("clientudid", newUuid()));
+        header.put("openudid", freshClientIds ? random16() : openudid());
+        header.put("clientudid", freshClientIds ? newUuid() : prefs().getString("clientudid", newUuid()));
         header.put("region", "CN");
         header.put("tz_name", TimeZone.getDefault().getID());
         header.put("tz_offset", TimeZone.getDefault().getRawOffset());
@@ -327,7 +336,8 @@ public final class DeviceRegister {
         root.put("header", header);
         root.put("_gen_time", now);
         byte[] json = root.toString().getBytes("UTF-8");
-        persistClientIds(header); // cdid/openudid/clientudid 固化，重试不换身份特征
+        // 主身份才固化 cdid/openudid/clientudid；备用身份用一次性特征，不能污染主身份
+        if (!freshClientIds) persistClientIds(header); // 固化为的是重试时设备特征稳定
 
         byte[] body = ttEncrypt(gzip(json));
 
@@ -486,6 +496,133 @@ public final class DeviceRegister {
         Context ctx = appContext;
         if (ctx == null) throw new IllegalStateException("DeviceRegister.attach 未调用");
         return ctx.getSharedPreferences("h\u006fnggu\u006f_identity", Context.MODE_PRIVATE);
+    }
+
+    /* ==================== 备用身份池（对齐 HGTV 1.3.6.2 的备用设备） ==================== */
+
+    /** 备用身份个数上限。 */
+    private static final int BACKUP_MAX = 2;
+
+    /** 备用身份有效期：超过即丢弃（服务端会周期性判废旧身份）。 */
+    private static final long BACKUP_TTL_MS = 12L * 60 * 60 * 1000;
+
+    /** 两次预注册之间的最小间隔，避免频繁打注册接口触发风控。 */
+    private static final long REFILL_COOLDOWN_MS = 10L * 60 * 1000;
+
+    private static volatile long lastRefillAt = 0L;
+
+    private static final java.util.concurrent.atomic.AtomicBoolean REFILLING =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** 备用身份落盘在独立文件：主身份重置（超期/手动重置）不会连带清空备用。 */
+    private static SharedPreferences poolPrefs() {
+        Context ctx = appContext;
+        if (ctx == null) return null;
+        return ctx.getSharedPreferences("h\u006fnggu\u006f_identity_pool", Context.MODE_PRIVATE);
+    }
+
+    /** 当前可用的备用身份个数。 */
+    public static int backupCount() {
+        SharedPreferences p = poolPrefs();
+        if (p == null) return 0;
+        long now = System.currentTimeMillis();
+        int n = 0;
+        for (int i = 0; i < BACKUP_MAX; i++) {
+            String dev = p.getString(slot(i, "d"), "");
+            long t = p.getLong(slot(i, "t"), 0L);
+            if (!dev.isEmpty() && t > 0L && now - t <= BACKUP_TTL_MS) n++;
+        }
+        return n;
+    }
+
+    /**
+     * 切到已预注册的备用身份（HGTV 的「备用设备」同款）。
+     *
+     * <p>与 {@link #resetIdentity()} + 注册相比：不用再打注册接口（省 0.3~1s 与一次风控计数），
+     * 直接换 device_id/iid/Cookie。成功返回 true；没有可用备用身份返回 false。
+     */
+    public static boolean switchToBackup() {
+        synchronized (LOCK) {
+            SharedPreferences p = poolPrefs();
+            if (p == null) return false;
+            long now = System.currentTimeMillis();
+            for (int i = 0; i < BACKUP_MAX; i++) {
+                String dev = p.getString(slot(i, "d"), "");
+                String iid = p.getString(slot(i, "i"), "");
+                long t = p.getLong(slot(i, "t"), 0L);
+                if (dev.isEmpty() || iid.isEmpty() || t <= 0L || now - t > BACKUP_TTL_MS) continue;
+                save(new Result(dev, iid, "", p.getString(slot(i, "c"), ""), true));
+                p.edit()
+                        .remove(slot(i, "d")).remove(slot(i, "i"))
+                        .remove(slot(i, "c")).remove(slot(i, "t"))
+                        .apply();
+                AppLog.INSTANCE.d("DeviceRegister", "切到备用身份 device_id=" + dev
+                        + "（剩余备用 " + backupCount() + " 个）");
+                return true;
+            }
+            return false;
+        }
+    }
+
+    /**
+     * 后台补一个备用身份（不改变当前身份）。
+     *
+     * <p>由取流成功路径触发：池不满、距上次预注册超过 [REFILL_COOLDOWN_MS] 时才动，
+     * 守护线程执行，失败静默（不影响播放）。
+     */
+    public static void maybeRefillBackupsAsync(final OkHttpClient client) {
+        if (backupCount() >= BACKUP_MAX) return;
+        if (System.currentTimeMillis() - lastRefillAt < REFILL_COOLDOWN_MS) return;
+        if (!REFILLING.compareAndSet(false, true)) return;
+        lastRefillAt = System.currentTimeMillis();
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Throwable last = null;
+                    for (String host : REGISTER_HOSTS) {
+                        try {
+                            Result r = doRegister(client, host + REGISTER_PATH, true);
+                            if (storeBackup(r)) {
+                                AppLog.INSTANCE.d("DeviceRegister", "备用身份已预注册 device_id="
+                                        + r.deviceId + "（共 " + backupCount() + " 个）");
+                                return;
+                            }
+                        } catch (Throwable e) {
+                            last = e;
+                        }
+                    }
+                    AppLog.INSTANCE.d("DeviceRegister", "备用身份预注册失败（忽略）"
+                            + (last == null ? "" : "：" + last.getMessage()));
+                } finally {
+                    REFILLING.set(false);
+                }
+            }
+        }, "hg-backup-register");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private static boolean storeBackup(Result r) {
+        SharedPreferences p = poolPrefs();
+        if (p == null || r == null) return false;
+        synchronized (LOCK) {
+            for (int i = 0; i < BACKUP_MAX; i++) {
+                if (!p.getString(slot(i, "d"), "").isEmpty()) continue;
+                p.edit()
+                        .putString(slot(i, "d"), r.deviceId)
+                        .putString(slot(i, "i"), r.installId)
+                        .putString(slot(i, "c"), r.cookieHeader)
+                        .putLong(slot(i, "t"), System.currentTimeMillis())
+                        .apply();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String slot(int i, String suffix) {
+        return "backup" + i + "-" + suffix;
     }
 
     /** 把本次注册用的 cdid/openudid/clientudid 固化，保证重试时设备特征稳定。 */
