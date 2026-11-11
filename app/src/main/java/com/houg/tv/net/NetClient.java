@@ -48,6 +48,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.GZIPOutputStream;
 
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -140,6 +141,17 @@ public final class NetClient {
 
     /** 单个域名返回「200 但空 body」时，在本域名上再试的次数（共 [EMPTY_BODY_RETRIES]+1 次）。 */
     private static final int EMPTY_BODY_RETRIES = 1;
+
+    /**
+     * 批量取流路径（HGTV 1.3.6.2 的主路径）。
+     *
+     * <p>2026-11-11 服务端把 {@code video_model/v1} 与 {@code multi_video_model/preload/v1}
+     * 两条老路径按 path 维度打成「200 + 空 body」（线上多台设备日志实证）；同日 HGTV
+     * 发布 1.3.6.2 后恢复可播，其取流主路径就是这里——{@code multi_video_model/player/v1}，
+     * 请求体 gzip、{@code dr_scene=player}、id 用 {@code mixed_video_id_map} 批量下发。
+     * 末尾没有斜杠，与 HGTV 逐字对齐。
+     */
+    private static final String PLAYER_BATCH_PATH = "/novel/player/multi_video_model/player/v1";
 
     /**
      * App 播放通道的**总耗时预算**（BUG-107）。
@@ -1724,6 +1736,77 @@ public final class NetClient {
             AppLog.INSTANCE.e(TAG, "取流前换新身份失败（沿用当前身份继续）", e);
         }
 
+        // —— 通道 A：批量取流（HGTV 1.3.6.2 逐字对齐）——
+        // 服务端 2026-11-11 起封掉的是「按 path 维度」的两条老路径（video_model/v1、
+        // multi_video_model/preload/v1，全网 200 空 body）；HGTV 同期只改了取流路径就
+        // 恢复可播：multi_video_model/player/v1 + dr_scene=player + gzip 请求体 +
+        // video_platform=1024 + use_server_dns=1（场景 cold_start_stage），id 用
+        // mixed_video_id_map 以 content_type 分组下发。响应仍是
+        // {code, data:{"<vid>":{"video_model":...}}}，extractVideoModel 原样兼容。
+        // 只有该通道整体失败（全部空 body，或路径异常）才回退下方原有单视频链。
+        JSONObject batchBiz = new JSONObject();
+        batchBiz.put("detail_page_version", 0);
+        batchBiz.put("device_level", 3);
+        batchBiz.put("disable_digg_stat", 0);
+        batchBiz.put("disable_video_relate_book", 0);
+        batchBiz.put("need_all_video_definition", 1);
+        batchBiz.put("need_mp4_align", 0);
+        batchBiz.put("use_os_player", 0);
+        batchBiz.put("use_server_dns", 1);
+        batchBiz.put("use_server_dns_scene", "cold_start_stage");
+        batchBiz.put("video_platform", 1024);
+        JSONObject batchMap = new JSONObject();
+        batchMap.put("1004", new JSONArray().put(vid));
+        JSONObject batchBody = new JSONObject();
+        batchBody.put("biz_param", batchBiz);
+        batchBody.put("dr_scene", "player");
+        batchBody.put("mixed_video_id_map", batchMap);
+        byte[] batchPayload = batchBody.toString().getBytes(UTF8);
+
+        int batchEmpty = 0;
+        batch_channel:
+        for (int round = 1; round <= 2; round++) {
+            for (int i = 0; i < attemptCount; i++) {
+                if (System.currentTimeMillis() >= deadline) break batch_channel; // BUG-107
+                String host = HostPool.at(start + i);
+                JSONObject json;
+                try {
+                    json = playbackPost(host + PLAYER_BATCH_PATH, batchPayload, true);
+                } catch (Exception e) {
+                    // 非「空 body」的异常（HTTP 4xx / 业务码）说明该路径本身不可用：
+                    // 记账后立刻放弃整条批量通道，回退单视频链，不再浪费预算。
+                    lastError = e;
+                    networkErrorCount++;
+                    AppLog.INSTANCE.e(TAG, "批量通道 " + PLAYER_BATCH_PATH + " 异常 host=" + host
+                            + "，放弃批量链回退单视频", e);
+                    break batch_channel;
+                }
+                if (json == null) {
+                    batchEmpty++;
+                    emptyBodyCount++;
+                    lastError = new Exception("播放接口空响应");
+                    sleepQuiet(200L * (i + 1));
+                    continue;
+                }
+                dataResponses++;
+                JSONObject model = extractVideoModel(json, vid);
+                if (model != null) {
+                    HostPool.reportSuccess(host);
+                    AppLog.INSTANCE.d(TAG, "取流成功（批量通道） round=" + round
+                            + " 空body=" + batchEmpty + " vid=" + vid);
+                    return model;
+                }
+                lastError = new Exception("HG批量播放信息为空");
+            }
+            if (round == 1 && batchEmpty > 0) {
+                // 空 body 与单视频链同样按「瞬时抖动」处理：退避后原身份再来一轮
+                sleepQuiet(1000L);
+            }
+        }
+        if (batchEmpty > 0) {
+            AppLog.INSTANCE.e(TAG, "批量通道 " + batchEmpty + " 次全部 200 空 body，回退单视频链", null);
+        }
+
         outer:
         for (int round = 1; round <= 3; round++) {
             for (int i = 0; i < attemptCount; i++) {
@@ -1941,11 +2024,31 @@ public final class NetClient {
         }
     }
 
+    private JSONObject playbackPost(String url, byte[] payload) throws Exception {
+        return playbackPost(url, payload, false);
+    }
+
+    /** gzip 压缩播放请求体（批量 player 接口要求，与 HGTV 一致）。 */
+    private static byte[] gzipBytes(byte[] raw) throws Exception {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream(raw.length);
+        GZIPOutputStream gz = new GZIPOutputStream(bos);
+        try {
+            gz.write(raw);
+        } finally {
+            gz.close();
+        }
+        return bos.toByteArray();
+    }
+
     /**
      * 播放器签名通道：PlaybackSigner（branch-0 抖动 + helios/medusa）+ 设备注册 Cookie。
      * 返回 null 表示「200 + 空 body」（网关挡掉），由调用方原地重试。
+     *
+     * @param gzipBody true = payload 已是 gzip 压缩体（批量 player 接口），自动带
+     *                 {@code Content-Encoding: gzip}；签名对 gzip 原始字节算 x-ss-stub，
+     *                 与 HGTV（MD5(gzip 字节)）一致。
      */
-    private JSONObject playbackPost(String url, byte[] payload) throws Exception {
+    private JSONObject playbackPost(String url, byte[] payload, boolean gzipBody) throws Exception {
         // 播放接口用合并档案：内置 27 字段 + 注册下发的本机身份（device_id/iid）。
         Map<String, String> profile = PlaybackSigner.defaultDeviceProfile();
         String dev = DeviceRegister.deviceId();
@@ -1964,6 +2067,11 @@ public final class NetClient {
         String cookie = DeviceRegister.cookieHeader();
         if (!cookie.isEmpty()) {
             rb.header("Cookie", cookie);
+        }
+        if (gzipBody) {
+            // HGTV 对批量接口同步加了这两个头；x-ss-stub 已由签名栈按 gzip 字节算好。
+            rb.header("Content-Encoding", "gzip");
+            rb.header("passport-sdk-version", "5051452");
         }
         rb.post(RequestBody.create(JSON_TYPE, payload));
         AppLog.INSTANCE.setLastGorgon(req.headers.get("x-gorgon"));
