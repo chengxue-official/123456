@@ -751,6 +751,12 @@ public final class PlaybackSigner {
         return sb.toString();
     }
 
+    /** x-tt-trace-id：{@code 00-<uuid32>-<uuid前16位>-01}（与 HGTV 生成规则一致）。 */
+    private static String traceId() {
+        String u = java.util.UUID.randomUUID().toString().replace("-", "");
+        return "00-" + u + "-" + u.substring(0, 16) + "-01";
+    }
+
     /** 生成签名请求：在 ticket 上抖动 0..127 直到命中 0 号哈希分支。 */
     public Request sign(String base, Map<String, String> values, byte[] body) {
         long now = clock.now();
@@ -771,20 +777,29 @@ public final class PlaybackSigner {
             headers.put("User-Agent", body != null ? VIDEO_UA : APP_UA);
             headers.put("Accept", "application/json; charset=utf-8,application/x-protobuf");
             headers.put("x-ss-req-ticket", String.valueOf(ticket));
-            headers.put("x-tt-request-tag", "t=0;n=0");
             headers.put("sdk-version", "2");
-            headers.put("passport-sdk-version", "50561");
+            // 【2026-11-11 对齐 HGTV 1.3.6.2】播放通道只发到 x-helios 为止：
+            //  · 不再发 x-medusa / x-tt-dt / x-tt-request-tag（HGTV 签名器把它们从
+            //    最终头表里显式删除，线上实证带旧值会被网关判成 200 空 body）；
+            //  · passport-sdk-version 用 5051452（HGTV 的新值），
+            //    x-vc-bdturing-sdk-version 用 4.0.3.cn（HGTV 的风控 SDK 版本）；
+            //  · 补上 lc=101 / X-SS-DP=8662 / x-tt-trace-id，与新版客户端一致。
+            headers.put("passport-sdk-version", "5051452");
             headers.put("x-xs-from-web", "0");
             headers.put("x-khronos", String.valueOf(ts));
-            headers.put("x-ladon", base64(be32(ts)));
-            headers.put("x-argus", base64(le32(ts)));
+            // 2026-11-10 起服务端对取流接口校验完整 Argus/Ladon，占位 base64(ts) 会被
+            // 网关判成 200 空 body；这里改为 HGTV 1.3.6.2 同款的完整实现。
+            HgArgus.Result argus = HgArgus.sign(query, body, ts, full);
+            headers.put("x-ladon", argus.ladon);
+            headers.put("x-argus", argus.argus);
             headers.put("x-gorgon", gorgon(query, body, ts, randomValue));
             headers.put("x-helios", helios(ts));
-            headers.put("x-medusa", medusa(url, body, ts));
-            headers.put("x-tt-dt", "");
             if (body != null) {
                 headers.put("Content-Type", "application/json; charset=UTF-8");
-                headers.put("x-vc-bdturing-sdk-version", "3.7.2.cn");
+                headers.put("x-vc-bdturing-sdk-version", "4.0.3.cn");
+                headers.put("lc", "101");
+                headers.put("X-SS-DP", "8662");
+                headers.put("x-tt-trace-id", traceId());
                 headers.put("x-ss-stub", hex(md5(body)).toUpperCase());
             }
             return new Request(url, headers, body);
