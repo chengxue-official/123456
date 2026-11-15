@@ -8,6 +8,8 @@
     <string name="nav_log">日志</string>
     <string name="nav_update">检查更新</string>
     <string name="nav_category">分类</string>
+    <string name="nav_recommend">推荐</string>
+    <string name="recommend_sub">为你精选</string>
 
     <!-- 分类 -->
     <string name="category_title">分类</string>

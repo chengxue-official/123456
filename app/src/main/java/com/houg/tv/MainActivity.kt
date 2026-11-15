@@ -228,6 +228,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupDock() {
         val actions = mapOf<String, () -> Unit>(
             "home" to { recycler.smoothScrollToPosition(0) },
+            "recommend" to { startActivity(Intent(this, RecommendActivity::class.java)) },
             "category" to { startActivity(Intent(this, CategoryActivity::class.java)) },
             "rank" to { startActivity(Intent(this, RankActivity::class.java)) },
             "search" to { startActivity(Intent(this, SearchActivity::class.java)) },
@@ -249,6 +250,7 @@ class MainActivity : AppCompatActivity() {
         data class DockEntry(val key: String, val itemId: Int, val labelId: Int, val barId: Int)
         listOf(
             DockEntry("home", R.id.dock_home, R.id.dock_home_label, R.id.dock_home_bar),
+            DockEntry("recommend", R.id.dock_recommend, R.id.dock_recommend_label, R.id.dock_recommend_bar),
             DockEntry("category", R.id.dock_category, R.id.dock_category_label, R.id.dock_category_bar),
             DockEntry("rank", R.id.dock_rank, R.id.dock_rank_label, R.id.dock_rank_bar),
             DockEntry("search", R.id.dock_search, R.id.dock_search_label, R.id.dock_search_bar),
