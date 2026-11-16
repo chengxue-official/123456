@@ -46,7 +46,7 @@ public final class XGorgon {
     }
 
     public static final String USER_AGENT =
-        "com.phoenix.read/73932 (Linux; U; Android 16; zh_CN; 25053RT47C; "
+        "com.phoenix.read/74332 (Linux; U; Android 16; zh_CN; 25053RT47C; "
       + "Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 "
       + "QuicVersion:c67e9834 2025-09-08)";
 

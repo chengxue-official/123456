@@ -76,7 +76,7 @@ public final class HgArgus {
         String deviceType = get(device, "device_type", "25053RT47C");
         String osVersion = get(device, "os_version", "16");
         String channel = get(device, "channel", "update_64");
-        String versionName = get(device, "version_name", "7.3.9.32");
+        String versionName = get(device, "version_name", "7.4.3.32");
 
         // 内层 bundle（field 1/2/3/7）
         byte[] inner = concat(

@@ -46,10 +46,10 @@ public final class SignedRequest {
         HttpUrl.Builder b = HttpUrl.parse(base + path).newBuilder();
         b.addQueryParameter("aid", "8662");
         b.addQueryParameter("app_name", "novelread");
-        b.addQueryParameter("version_code", "73932");
-        b.addQueryParameter("version_name", "7.3.9.32");
-        b.addQueryParameter("manifest_version_code", "73932");
-        b.addQueryParameter("update_version_code", "73932");
+        b.addQueryParameter("version_code", "74332");
+        b.addQueryParameter("version_name", "7.4.3.32");
+        b.addQueryParameter("manifest_version_code", "74332");
+        b.addQueryParameter("update_version_code", "74332");
         b.addQueryParameter("channel", "update_64");
         b.addQueryParameter("device_platform", "android");
         b.addQueryParameter("os", "android");

@@ -1696,15 +1696,16 @@ public final class NetClient {
         bizParam.put("need_mp4_align", false);
         bizParam.put("use_os_player", false);
         bizParam.put("use_server_dns", false);
-        // video_platform 决定服务端下发哪种编码：HGTV（Go 核心，minireel.go）用的是 3，
-        // 同一批 AV1-only 剧在它那边拿到的都是 HEVC；我们长期用 1024（电视端值），
-        // 服务端给的是 AV1（bytevc2）。线上 ggy6xte6gg 已证 1024 下这部剧几乎全是 AV1。
-        // 这里跟 HGTV 对齐成 3，若服务端因此改发 HEVC，就不必再走 AV1 重封装。
-        bizParam.put("video_platform", 3);
+        bizParam.put("disable_video_relate_book", false);
+        // 1024 = 电视端/播放器通道值，multi_video_model 只认这个组合（实测 3 / 0 均报
+        // 100001 "video platform invalid, param:0"）。
+        bizParam.put("video_platform", 1024);
 
+        JSONObject idMap = new JSONObject();
+        idMap.put("1", new JSONArray().put(vid));
         JSONObject body = new JSONObject();
-        body.put("video_id", vid);
         body.put("biz_param", bizParam);
+        body.put("mixed_video_id_map", idMap);
         byte[] payload = body.toString().getBytes(UTF8);
 
         Exception lastError = null;
@@ -1745,7 +1746,7 @@ public final class NetClient {
                 for (int r = 0; r <= EMPTY_BODY_RETRIES; r++) {
                     JSONObject json;
                     try {
-                        json = playbackPost(host + "/novel/player/video_model/v1/", payload);
+                        json = playbackPost(host + "/novel/player/multi_video_model/v1/", payload);
                     } catch (Exception e) {
                         lastError = e;
                         networkErrorCount++; // BUG-105：真·网络错误，不是身份指纹
@@ -1980,6 +1981,12 @@ public final class NetClient {
 
         // 签名必须每次重算：ts/_rticket/随机数都在变，缓存即作废。
         PlaybackSigner.Request req = playbackSigner.sign(url, profile, payload);
+        // x-medusa 必须随播放请求一起发：HGTV 1.3.7.x 的 multi_video_model 请求实测带它，
+        // 缺这条时网关只回 200 + 0 字节。
+        String khronos = req.headers.get("x-khronos");
+        if (khronos != null) {
+            req.headers.put("x-medusa", playbackSigner.medusa(req.url, payload, Integer.parseInt(khronos)));
+        }
         Request.Builder rb = new Request.Builder().url(req.url);
         for (Map.Entry<String, String> e : req.headers.entrySet()) {
             rb.header(e.getKey(), e.getValue());

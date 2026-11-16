@@ -47,7 +47,7 @@ import okhttp3.Response;
  *     x-ss-dp: 8662 / x-ss-req-ticket: 毫秒 / x-vc-bdturing-sdk-version: 4.0.3.cn /
  *     lc: 101 / sdk-version: 2 / passport-sdk-version: 5051452 /
  *     x-neptune: -8|50:51:59:30:40:47:49:39 / x-ss-stub: body 的 MD5 大写 /
- *     User-Agent: com.phoenix.read/73932 (...)
+ *     User-Agent: com.phoenix.read/74332 (...)
  *  3) body = ttEncrypt(gzip(JSON))，原始二进制（发 base64 文本必回 device_id=0）：
  *     MAGIC(74 63 05 10 00 00) || rnd[32] ||
  *     AES-128-CBC(key = SHA512(SHA512(rnd) || KDF_SALT)[0:16],
@@ -86,7 +86,7 @@ public final class DeviceRegister {
     };
 
     private static final String REGISTER_UA =
-            "com.phoenix.read/73932 (Linux; U; Android 16; zh_CN; 25053RT47C; "
+            "com.phoenix.read/74332 (Linux; U; Android 16; zh_CN; 25053RT47C; "
                     + "Build/BP2A.250605.031.A3)";
 
     /** ttEncrypt 魔数（6 字节）。 */
@@ -284,8 +284,8 @@ public final class DeviceRegister {
         header.put("aid", 8662);
         header.put("channel", "69310258a");
         header.put("package", "com.phoenix.read");
-        header.put("version_code", 73932);
-        header.put("app_version", "7.3.9.32");
+        header.put("version_code", 74332);
+        header.put("app_version", "7.4.3.32");
         header.put("sdk_version", "3.7.0-rc.34-fanqie-xiaoshuo");
         header.put("sdk_target_version", 29);
         header.put("git_hash", "3a88f4e");
