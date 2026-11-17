@@ -113,6 +113,10 @@ class MainActivity : AppCompatActivity() {
         setupMast()
         setupDock()
 
+        // 启动时静默检查更新：只有真有新版本才弹窗，没更新/断网完全无感。
+        // 延迟 1.5s 让首页先出画，避免弹窗盖在还在转圈的列表上。
+        recycler.postDelayed({ UpdateDialog.checkOnLaunch(this, scope) }, 1500L)
+
         if (recEnabled(SettingsActivity.REC_CONTINUE)) {
             adapter.setContinue(App.watchHistory.list().take(continueCount()))
         }
