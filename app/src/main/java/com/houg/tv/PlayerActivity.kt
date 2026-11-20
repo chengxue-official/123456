@@ -590,23 +590,6 @@ class PlayerActivity : AppCompatActivity() {
     /** 上次记录丢帧日志的时间：进度回调很密集，限流避免日志被刷爆。 */
     private var lastDropLogAt = 0L
 
-    /**
-     * 最近一次视频帧真正被渲染的时间（由 [frameAnalytics] 的帧偏移回调刷新）。
-     * 用来判断「声音在走、画面停住」——见 [checkVideoStall]。
-     */
-    @Volatile
-    private var lastVideoFrameAt = 0L
-
-    /** 本集内画面停滞的自救次数：第一次轻量重同步，之后直接降档。 */
-    private var stallRecoveries = 0
-
-    /** 上次自救时间，避免 500ms 轮询连环触发。 */
-    private var lastStallRecoverAt = 0L
-
-    /** 最近一次实际使用的视频解码器名（冻屏排查打日志用）。 */
-    @Volatile
-    private var lastDecoderName = ""
-
     /** 上次记录「画面渲染落后」日志的时间（见 [frameAnalytics] 的偏移回调）。 */
     private var lastDriftLogAt = 0L
 
@@ -632,7 +615,6 @@ class PlayerActivity : AppCompatActivity() {
             // 不含上面的关键字，漏判会让软解期倍速不封顶、预载不关（BUG-135）。
             // 用于预载开关（软解 + 预载并发会把低内存盒子压到 OOM，见 softDecoding）。
             val n = decoderName.lowercase()
-            lastDecoderName = decoderName
             softDecoding = n.contains("google") || n.contains("software") || n.contains("sw.")
                     || n.contains("c2.android") || n.contains("c2.google")
             AppLog.d("PlayerActivity", "视频解码器=" + decoderName
@@ -670,8 +652,6 @@ class PlayerActivity : AppCompatActivity() {
             totalProcessingOffsetUs: Long,
             frameCount: Int
         ) {
-            // 有帧被渲染 = 画面还在动。这个时间戳是 [checkVideoStall] 判「画面停住」的依据。
-            lastVideoFrameAt = System.currentTimeMillis()
             if (totalProcessingOffsetUs > -500_000L) return // 落后不足半秒（正值=提前，直接忽略）
             val now = System.currentTimeMillis()
             if (now - lastDriftLogAt < 10_000L) return
@@ -1867,15 +1847,10 @@ class PlayerActivity : AppCompatActivity() {
         val builder = ExoPlayer.Builder(this)
             // 内容源工厂：本地缓存走 FileDataSource，明文片源走 OkHttp 边下边播
             .setMediaSourceFactory(DefaultMediaSourceFactory(HgDataSourceFactory()))
-            // 帧率跟随：**默认关闭**。电视上出现「同一帧重复 + 声音照走」的音画不同步，
-            // 最可能就是它——该功能专为电视 60Hz 面板减轻 24/30fps 的 3:2 抖动而开，
-            // 但部分电视/HDMI 链路在播放中重协商刷新率时会短暂冻屏：画面停在最后一帧、
-            // 音频时钟继续走，恢复后音画就错位了。收益是「更顺」，代价是「可能冻屏错位」，
-            // 默认取稳；确认无副作用后把 [FOLLOW_SOURCE_FRAME_RATE] 改成 true 即可恢复。
-            .setVideoChangeFrameRateStrategy(
-                if (FOLLOW_SOURCE_FRAME_RATE) C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_ONLY_IF_SEAMLESS
-                else C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF
-            )
+            // 帧率适配：让显示刷新率跟随片源帧率（24/25/30fps），减少 60Hz 面板上的
+            // 3:2 抖动感（观感就是「帧数不高」）。只在不引起闪屏的无缝模式下才切，
+            // 老设备/不支持的系统会自动忽略，不会黑屏或闪 HDMI。
+            .setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_ONLY_IF_SEAMLESS)
         if (decoderSoft) {
             builder.setRenderersFactory(SoftwareRenderersFactory(this))
         } else {
@@ -2975,71 +2950,6 @@ class PlayerActivity : AppCompatActivity() {
 
     /* ==================== 进度刷新（500ms） ==================== */
 
-    /**
-     * 画面停滞看门狗。
-     *
-     * 现象（用户报的电视端问题）：**同一个画面反复出现/卡住，但声音正常继续**，
-     * 恢复后音画不同步。本质是视频轨冻住、音频时钟照走——解码器没吐新帧，
-     * Surface 一直显示最后一帧，ExoPlayer 不会主动纠正。
-     *
-     * 自救分级，避免一上来就粗暴重播：
-     *  1. 首次：原地 seek 一次，强制解码器 flush 重建，通常能接上；
-     *  2. 本集内再次发生：说明这档清晰度超出本机解码余量，降一档重播（保留进度）。
-     */
-    private fun checkVideoStall(p: ExoPlayer) {
-        val now = System.currentTimeMillis()
-        // 暂停/拖动/切集期间画面本来就不动，不算停滞，重置基准
-        if (!p.isPlaying || p.playbackState != Player.STATE_READY || tracking || switchingEpisode) {
-            lastVideoFrameAt = now
-            return
-        }
-        if (lastVideoFrameAt == 0L) {
-            lastVideoFrameAt = now
-            return
-        }
-        if (now - lastVideoFrameAt < VIDEO_STALL_MS) return
-        if (now - lastStallRecoverAt < STALL_RECOVER_GAP_MS) return
-
-        lastStallRecoverAt = now
-        stallRecoveries++
-        val pos = p.currentPosition
-        AppLog.d("PlayerActivity", "画面停滞 " + (now - lastVideoFrameAt) + "ms 位置=" + pos
-                + " 解码器=" + lastDecoderName + " 软解=" + softDecoding
-                + " 第" + stallRecoveries + "次" + playbackTag())
-        lastVideoFrameAt = now
-
-        if (stallRecoveries >= 2 && degradeQualityForStall()) return
-        // 轻量重同步：原地 seek 触发解码器 flush 重建
-        try {
-            p.seekTo(pos)
-        } catch (_: Exception) {
-        }
-    }
-
-    /**
-     * 反复冻屏时降一档清晰度重播（保留播放位置）。
-     * 返回 true 表示已触发降档重播，调用方不用再 seek。
-     */
-    private fun degradeQualityForStall(): Boolean {
-        val avail = availableQualityIndices()
-        val cur = avail.indexOf(qualityIndex)
-        if (qualityIndex <= QUALITY_AUTO) return false
-        val lower = if (cur > 0) avail[cur - 1] else QUALITY_AUTO
-        if (lower == qualityIndex) return false
-
-        AppLog.d("PlayerActivity", "反复冻屏，降档 "
-                + getString(QUALITY_MODES[qualityIndex].labelRes) + " → "
-                + getString(QUALITY_MODES[lower].labelRes))
-        qualityIndex = lower
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(PREF_QUALITY, qualityIndex).apply()
-        updateQualityLabel()
-        toast(getString(R.string.quality_switched, getString(QUALITY_MODES[lower].labelRes)))
-        stallRecoveries = 0
-        clearVidCacheFiles(vidList.getOrNull(currentPos))
-        replayCurrentEpisode()
-        return true
-    }
-
     private val progressRunnable = object : Runnable {
         override fun run() {
             val p = player
@@ -3060,8 +2970,6 @@ class PlayerActivity : AppCompatActivity() {
                 updateDanmaku(p, pos, dur)
                 // 周期性落盘进度（节流 10s），保证异常退出也不丢进度
                 recordHistory(force = false)
-                // 画面冻住而声音继续（电视端反馈）→ 分级自救，见 checkVideoStall
-                checkVideoStall(p)
             }
             handler.postDelayed(this, 500)
         }
@@ -3482,19 +3390,6 @@ class PlayerActivity : AppCompatActivity() {
     companion object {
         /** AV1（bytevc2）集「有声黑屏」的判定时限，见 [armAv1FirstFrameWatch]。 */
         private const val AV1_FIRST_FRAME_TIMEOUT_MS = 8000L
-
-        /**
-         * 是否让显示刷新率跟随片源帧率（见 [buildPlayer]）。
-         * 默认 false：电视上疑似它导致的「同一帧重复 + 声音继续」冻屏/音画不同步。
-         */
-        private const val FOLLOW_SOURCE_FRAME_RATE = false
-
-        /** 画面停滞判定：播放中超过这么久没有任何新帧渲染 = 画面冻住而声音在走。 */
-        private const val VIDEO_STALL_MS = 2500L
-
-        /** 两次停滞自救的最小间隔，避免 500ms 轮询连环 seek。 */
-        private const val STALL_RECOVER_GAP_MS = 20_000L
-
         const val EXTRA_SERIES_ID = "series_id"
         const val EXTRA_TITLE = "title"
         const val EXTRA_COVER = "cover"
