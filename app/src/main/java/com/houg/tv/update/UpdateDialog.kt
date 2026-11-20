@@ -41,16 +41,79 @@ object UpdateDialog {
             }
 
             val remote = result.remote ?: return@launch
-            val notes = remote.notes.ifEmpty { "（无更新说明）" }
-            AlertDialog.Builder(activity)
-                .setTitle("发现新版本 v${remote.versionName}")
-                .setMessage("当前版本：${currentVersionName(activity)}\n" +
-                        "最新版本：v${remote.versionName}\n\n" +
-                        "更新内容：\n$notes")
-                .setPositiveButton("立即更新") { _, _ -> downloadAndInstall(activity, scope, remote) }
-                .setNegativeButton("稍后", null)
-                .show()
+            showAvailable(activity, scope, remote, auto = false)
         }
+    }
+
+    /**
+     * 启动时自动检查更新：**静默**查一次，只有真有新版本才弹窗。
+     *
+     * 与 [start] 的区别：
+     *  - 不弹「正在检查…」——开机就问用户「检查更新」太吵，而且没更新时不该有任何动静；
+     *  - 检查失败完全静默（断网时不能每次启动都甩一个错误框）；
+     *  - 「以后再说」会记住版本号并静音 [QUIET_AFTER_DISMISS_MS]，避免每次开 App 都糊脸；
+     *    一旦远端出了**更新的版本**（versionCode 变大）立刻重新提示。
+     *  - 每个进程只查一次（[launchChecked]），从后台切回前台不重复检查。
+     */
+    fun checkOnLaunch(activity: Activity, scope: CoroutineScope) {
+        if (launchChecked) return
+        launchChecked = true
+        val current = currentVersionCode(activity)
+        scope.launch {
+            val result = try {
+                withContext(Dispatchers.IO) { UpdateChecker.check(activity, current) }
+            } catch (e: Exception) {
+                null
+            } ?: return@launch
+            if (!result.hasUpdate) return@launch
+            val remote = result.remote ?: return@launch
+            if (activity.isFinishing || activity.isDestroyed) return@launch
+            if (inQuietPeriod(activity, remote.versionCode)) return@launch
+            showAvailable(activity, scope, remote, auto = true)
+        }
+    }
+
+    /** 有新版本时的弹窗：手动入口（auto=false）与启动自动检查（auto=true）共用。 */
+    private fun showAvailable(
+        activity: Activity,
+        scope: CoroutineScope,
+        remote: UpdateChecker.Remote,
+        auto: Boolean
+    ) {
+        val notes = remote.notes.ifEmpty { "（无更新说明）" }
+        val builder = AlertDialog.Builder(activity)
+            .setTitle("发现新版本 v${remote.versionName}")
+            .setMessage(
+                "当前版本：${currentVersionName(activity)}\n" +
+                        "最新版本：v${remote.versionName}\n\n" +
+                        "更新内容：\n$notes"
+            )
+            .setPositiveButton("立即更新") { _, _ -> downloadAndInstall(activity, scope, remote) }
+        builder.setNegativeButton(if (auto) "以后再说" else "稍后") { _, _ ->
+            if (auto) rememberDismiss(activity, remote.versionCode)
+        }
+        val dialog = builder.show()
+        // 自动弹窗（开机检查）必须把焦点停在「以后再说」：
+        // AlertDialog 默认焦点在正向按钮上，电视遥控器很可能正被按着
+        // （方向键/确定），一旦误触就直接开始下 APK，用户会觉得 App 自己乱下载。
+        // 手动入口不受影响——那是用户主动点进来的，聚焦「立即更新」才是对的。
+        if (auto) {
+            dialog.getButton(android.content.DialogInterface.BUTTON_NEGATIVE)?.requestFocus()
+        }
+    }
+
+    /** 该版本是否还在「以后再说」的静音期内。 */
+    private fun inQuietPeriod(context: Context, remoteCode: Int): Boolean {
+        val p = context.getSharedPreferences(PREF_UPDATE, Context.MODE_PRIVATE)
+        if (p.getInt(KEY_DISMISSED_CODE, 0) != remoteCode) return false
+        return System.currentTimeMillis() - p.getLong(KEY_DISMISSED_AT, 0L) < QUIET_AFTER_DISMISS_MS
+    }
+
+    private fun rememberDismiss(context: Context, remoteCode: Int) {
+        context.getSharedPreferences(PREF_UPDATE, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_DISMISSED_CODE, remoteCode)
+            .putLong(KEY_DISMISSED_AT, System.currentTimeMillis())
+            .apply()
     }
 
     private fun downloadAndInstall(activity: Activity, scope: CoroutineScope, remote: UpdateChecker.Remote) {
@@ -147,4 +210,15 @@ object UpdateDialog {
     } catch (e: Exception) {
         "?"
     }
+
+    /** 每个进程只自动检查一次：从后台切回前台不重复联网。 */
+    @Volatile
+    private var launchChecked = false
+
+    /** 「以后再说」对同一版本的静音时长：12 小时（期间开 App 不再打扰）。 */
+    private const val QUIET_AFTER_DISMISS_MS = 12 * 60 * 60 * 1000L
+
+    private const val PREF_UPDATE = "houg_update"
+    private const val KEY_DISMISSED_CODE = "dismissed_code"
+    private const val KEY_DISMISSED_AT = "dismissed_at"
 }

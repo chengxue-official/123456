@@ -963,11 +963,37 @@ public final class NetClient {
         throw new Exception("栏目暂无数据");
     }
 
+    /**
+     * 推荐流（导航栏「推荐」页数据源）。
+     *
+     * <p>HG 没有独立的推荐 endpoint —— 分类 landpage 接口里的 {@code sort} 维度就是它
+     * （分类页筛选行第三项「推荐」，见 {@link #FILTER_ROW_DEFS}）。这里用
+     * {@code sort=hot_score}（服务端默认推荐排序）+ 三个大类混合，得到全站推荐流。
+     * 响应结构与目录页完全相同，直接复用 {@link #parseDrama}。
+     */
+    public CatalogPage recommend(int offset, String sessionId) throws Exception {
+        JSONArray genres = new JSONArray();
+        genres.put("short_play");
+        genres.put("comic_series");
+        genres.put("ai_series");
+        AppLog.INSTANCE.d(TAG, "recommend 推荐流 offset=" + offset + " genre=三大类混合 sort=hot_score");
+        return landpage(genres, "hot_score", "default", offset, sessionId);
+    }
+
     /** App 版分类（catalog 的签名 POST 主体）。 */
     private CatalogPage appCatalog(String genreKey, String scene, int offset, String sessionId) throws Exception {
+        return landpage(new JSONArray().put(genreKey), "online_time", scene, offset, sessionId);
+    }
+
+    /**
+     * 分类 landpage 的公共 POST 主体：目录页（sort=online_time）与推荐流（sort=hot_score）共用。
+     * 抽出来是为了让「推荐」不必复制一份 40 行的取数/解析逻辑。
+     */
+    private CatalogPage landpage(JSONArray genreArr, String sort, String scene,
+                                 int offset, String sessionId) throws Exception {
         JSONObject selectItems = new JSONObject();
-        selectItems.put("genre", new JSONArray().put(genreKey));
-        selectItems.put("sort", new JSONArray().put("online_time"));
+        selectItems.put("genre", genreArr);
+        selectItems.put("sort", new JSONArray().put(sort));
         selectItems.put("gender", new JSONArray());
         selectItems.put("category_dim_theme", new JSONArray());
         selectItems.put("category_dim_role", new JSONArray());
