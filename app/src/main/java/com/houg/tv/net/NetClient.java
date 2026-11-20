@@ -1651,7 +1651,7 @@ public final class NetClient {
      * <pre>
      * {
      *   "video_id": "&lt;分集ID&gt;",
-     *   "biz_param": { "detail_page_version":0, "device_level":3,
+     *   "biz_param": { "detail_page_version":0, "device_level":1,
      *                  "disable_digg_stat":false, "need_all_video_definition":true,
      *                  "need_mp4_align":false, "use_os_player":false,
      *                  "use_server_dns":false, "video_platform":3 }
@@ -1690,7 +1690,14 @@ public final class NetClient {
 
         JSONObject bizParam = new JSONObject();
         bizParam.put("detail_page_version", 0);
-        bizParam.put("device_level", 3);
+        // device_level 决定服务端下发哪条档位梯子（2026-11-20 实测）：
+        //   level 2/3 → 低档全是 bytevc2(AV1/VVC，Android 无解码器)，HEVC 只有 1080p 一档，
+        //               于是「低端限高 720p」「软解降一档」全都无档可降，老设备只能硬扛
+        //               1080p HEVC → 视频解码追不上（画面重复、音频继续、音画错位）；
+        //   level 1/4 → 整条梯子都是 bytevc1(HEVC)：640/854/960/1280/1920，
+        //               改 codec_type=1 后为 h265 同档，降档逻辑才真正生效。
+        // 强设备仍拿最高档 1920，观感不变，故统一用 1。
+        bizParam.put("device_level", 1);
         bizParam.put("disable_digg_stat", false);
         bizParam.put("need_all_video_definition", true);
         bizParam.put("need_mp4_align", false);
