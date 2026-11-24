@@ -205,10 +205,12 @@ class PlayerActivity : AppCompatActivity() {
      * 反复重建播放器只会让用户看到无限闪烁。
      */
     private var autoSoftFailoverVid: String? = null
+    /** 因「解码失败」已按原档重取流重试过的 vid（第一级自愈，不否决 HEVC）。 */
+    private var autoDecodeRetryVid: String? = null
     /**
-     * 因「解码失败」已自动排除 HEVC 重取流过的 vid（第一级自愈）。
-     * 升级链：硬解失败 → 先删缓存+disableHevc 重新取 H.264（不动解码方式）；
-     * 若仍失败 → 切软解重试一次；再失败 → 报错终态。
+     * 因「解码失败」已自动排除 HEVC 重取流过的 vid（第二级自愈）。
+     * 升级链：硬解失败 → 先删缓存原档重试（不动编码选择）；
+     * 若仍失败 → 运行期否决 HEVC 重取 H.264；再失败 → 切软解重试一次；再失败 → 报错终态。
      */
     private var autoHevcSkipVid: String? = null
     /**
@@ -516,7 +518,7 @@ class PlayerActivity : AppCompatActivity() {
                 return
             }
 
-            // ===== 解码失败自愈（有界两级升级）=====
+            // ===== 解码失败自愈（有界三级升级）=====
             // 线上日志（DWIN-380P / 华为 Android 12）：HG下发的 1080p 变体是
             // bytevc1(HEVC)，该机 HEVC 硬解初始化失败 → 黑屏。
             // videoModel 已优先给「探测不支持 HEVC」的设备选 H.264，但仍兜不住两点：
@@ -525,36 +527,53 @@ class PlayerActivity : AppCompatActivity() {
             // 旧实现只有「切软解」一级，且不删缓存 —— rebuildPlayer→playCurrent
             // 会命中同一份 HEVC 缓存文件，软解面对同一码流同样失败，于是
             // 「重建→失败→再重建」原地打转（日志 18:39:16~18:39:18 两秒内往返 4 次）。
-            // 现在改为两级，每级都先删缓存、且只在本 vid 上升级一次：
-            //   一级：排掉 HEVC + 删缓存 + 保持硬解重取流（多半是选流错，H.264 硬解即可）
-            //   二级：一级仍失败 → 切软解再试一次
-            //   终态：两级都用尽仍失败 → disableHevc 并报可读错误，不再重建
+            // 现在三级，每级都先删缓存、且只在本 vid 上升级一次：
+            //   一级：只删缓存按原档重取流重下，**暂不否决 HEVC**
+            //        （DECODER_INIT_FAILED 在低配盒子上多为瞬时失败，见下）
+            //   二级：同一集再失败 → 运行期否决 HEVC + 重取流（多半是选流错，H.264 硬解即可）
+            //   三级：二级仍失败 → 切软解再试一次
+            //   终态：三级都用尽仍失败 → 报可读错误，不再重建
             if (isDecodeFailure(error)) {
                 val vid = vidList.getOrNull(currentPos)
-                // 无论走到哪一级，先把 HEVC 否决掉并清掉这份坏缓存：
+                // 无论走到哪一级，先清掉这份坏缓存：
                 // 缓存里就是解不动的码流，留着只会让下次重试继续命中它。
                 if (vid != null) {
                     // BUG-103：只删当前档位不够——disableHevc 之后若命中另一档位
                     // （用户切换过清晰度）遗漏的 HEVC 缓存，仍会原样再失败一次。
                     deleteAllCachedClearFiles(vid)
                 }
-                try {
-                    NetClient.disableHevc()
-                } catch (e: Throwable) {
-                    AppLog.d("PlayerActivity", "disableHevc 失败: " + (e.message ?: ""))
-                }
 
-                // 一级：仍用硬解，但重取流（此时 NetClient 只给 H.264）
+                // 一级：原档重取流重下，先不否决 HEVC。
+                // 线上 ChangHong 2.1.8：同一次会话里 OMX.hisi HEVC 硬解成功初始化 50+ 次，
+                // 14:39:01 一次 480P 初始化失败就立刻 disableHevc()——红果这条梯子
+                // 五档全是 HEVC，否决后 sortVariantsForDevice 只能「升序选最低档」，
+                // 本会话之后每集都被锁死 360P（明明硬解 720P 一直好好的）。
+                // 瞬时失败先用同样的档重试一次，才是对代价最小的响应。
+                if (vid != null && autoDecodeRetryVid != vid) {
+                    autoDecodeRetryVid = vid
+                    AppLog.d("PlayerActivity", "解码失败(" + error.errorCodeName
+                            + ")，清缓存按原档重取流重试（暂不否决 HEVC）vid=" + vid)
+                    toast("画面解码失败，正在重试")
+                    currentEpisodeFailed = false
+                    replayCurrentEpisode()
+                    return
+                }
+                // 二级：同一集二次失败 → 判定本机真解不动这个码流，运行期否决 HEVC 后重取流
                 if (vid != null && autoHevcSkipVid != vid) {
                     autoHevcSkipVid = vid
+                    try {
+                        NetClient.disableHevc()
+                    } catch (e: Throwable) {
+                        AppLog.d("PlayerActivity", "disableHevc 失败: " + (e.message ?: ""))
+                    }
                     AppLog.d("PlayerActivity", "解码失败(" + error.errorCodeName
-                            + ")，排除 HEVC 后重取流重试 vid=" + vid)
+                            + ")，本机连续解不动，排除 HEVC 后重取流重试 vid=" + vid)
                     toast(getString(R.string.decoder_retry_avc))
                     currentEpisodeFailed = false
                     replayCurrentEpisode()
                     return
                 }
-                // 二级：切软解重试一次
+                // 三级：切软解重试一次
                 if (vid != null && autoSoftFailoverVid != vid && !decoderSoft) {
                     // 守卫（B9）：低内存设备软解高分辨率 HEVC 预期
                     // OutOfMemoryError（线上 1994MB 的 VIDAA 电视实测），不再白切一次，
@@ -1102,6 +1121,16 @@ class PlayerActivity : AppCompatActivity() {
                 if (cached != null) {
                     if (gen != playGen) return@launch
                     AppLog.d("PlayerActivity", "命中预加载缓存 vid=$vid")
+                    // 治本（线上 ChangHong「连播进下一集卡住」）：缓存命中让换流提前到了
+                    // 上一集刚播完的几百 ms 内，这台 ROM 的旧解码器会话还没释放完，
+                    // 立刻顶一个新的上去，播 6~14s 后整条播放链路楔死（无报错）。
+                    // 对照证据：现场下载路径天然隔 4~5s、一次都没卡。这里把缓存路径的
+                    // 间隔补到 [SWITCH_SETTLE_MS]（从切集起点起算，现场下载路径本来就
+                    // 超过阈值，不再白等）。
+                    val settledFor = System.currentTimeMillis() - switchStartedAt
+                    if (switchingEpisode && settledFor in 0 until SWITCH_SETTLE_MS) {
+                        delay(SWITCH_SETTLE_MS - settledFor)
+                    }
                     withContext(Dispatchers.IO) { parseTkhd(cached) }
                     if (gen != playGen) return@launch
                     streamingCurrent = false
@@ -2513,6 +2542,7 @@ class PlayerActivity : AppCompatActivity() {
         currentPos = pos
         resumePosition = 0
         // 切集后新的一集是全新上下文：重置本集的失败自愈标记（每个 vid 各自计一次）
+        autoDecodeRetryVid = null
         autoHevcSkipVid = null
         autoSoftFailoverVid = null
         ioRetriedVid = null
@@ -2711,14 +2741,23 @@ class PlayerActivity : AppCompatActivity() {
      */
     private fun cleanupClearFiles(keep: Set<String?>? = null) {
         val tags = arrayOf("_auto720", "_auto", "_480", "_720", "_1080", "_full")
+        // 全清模式（onDestroy）只扫陈旧临时件：正在写的 `.part`/`.remux` 不动。
+        // 线上（ChangHong 2.1.8、VIDAA 2.1.6）多处「重封装产物丢失: *.remux.*.part」
+        // 就是这里干的——退出播放页时 onDestroy 全清，把另一个 PlayerActivity 实例
+        // （或本实例尚未收尾的下载线程，scope.cancel 打不断阻塞 IO）正在 remux 的
+        // 临时文件删掉，rename 落空直接抛错，白下一次。
+        val tempGraceUntil = System.currentTimeMillis() - TEMP_FILE_GRACE_MS
         try {
             cacheDir.listFiles()?.forEach { f ->
                 if (!f.name.startsWith("clear_")) return@forEach
-                // keep 模式下只清「成品 .mp4」：`clear_<vid>_<tag>.remux[.pf].part`
-                // 是在途临时文件（downloadAndPrepare 的 finally 负责删），
-                // 它们的名字还原不出 vid，永远匹配不上 keep，会被误删——
-                // 切集/清理正好撞上在途 remux 时，那一集的预取就白下了（QA BUG-124）。
-                if (keep != null && !f.name.endsWith(".mp4")) return@forEach
+                if (!f.name.endsWith(".mp4")) {
+                    // 在途临时件：够新就别碰（downloadAndPrepare 的 finally 负责删；
+                    // 陈旧残留超过宽限期才由这里回收）
+                    if (f.lastModified() > tempGraceUntil) return@forEach
+                    if (keep != null) return@forEach
+                    f.delete()
+                    return@forEach
+                }
                 if (keep != null) {
                     var name = f.name.removePrefix("clear_").removeSuffix(".mp4")
                     for (t in tags) name = name.removeSuffix(t)
@@ -3520,6 +3559,17 @@ class PlayerActivity : AppCompatActivity() {
 
         /** 每集最多「弃缓存 + 重建播放器」的次数，超出就停止自救（源本身坏掉时防无限闪屏）。 */
         private const val STALL_MAX_REBUILDS = 2
+
+        /**
+         * 切集后等待上一集解码器会话释放的最小间隔（ms，从切集起点起算）。
+         * 线上对照：现场下载路径天然隔 4~5s 从不卡死，缓存命中秒切路径 7 次 4 卡——
+         * 低配 ROM（ChangHong Android 5.1 / 983MB）旧 MediaCodec 会话没释放完就
+         * 开新会话会楔死。缓存命中起播前补足到 600ms，现场路径（≥4s）不受影响。
+         */
+        private const val SWITCH_SETTLE_MS = 600L
+
+        /** 陈旧临时文件（.part/.remux）的回收宽限期（ms）：比任何正常 remux 都长得多。 */
+        private const val TEMP_FILE_GRACE_MS = 10 * 60_000L
 
         const val EXTRA_SERIES_ID = "series_id"
         const val EXTRA_TITLE = "title"

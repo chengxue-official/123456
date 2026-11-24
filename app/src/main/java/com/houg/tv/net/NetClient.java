@@ -2744,8 +2744,8 @@ public final class NetClient {
     /**
      * 关键词搜索（流式版本）。
      *
-     * <p>与 {@link #search(String)} 同一条三路并行流水线，区别是把结果<b>分批推出</b>：
-     * 官方腿每翻完一页推一批、另两条腿各完成时推一批，全部收尾（含多季补全 + 排序）后
+     * <p>与 {@link #search(String)} 同一条并行流水线，区别是把结果<b>分批推出</b>：
+     * 官方腿每翻完一页推一批、建议腿完成时推一批，全部收尾（含多季补全 + 排序）后
      * 再推一次 {@code done=true} 的全量。
      *
      * <p>意义在于首屏不再受「总预算」压制：既然结果能边拿边显示，官方腿就可以用更长的
@@ -2759,8 +2759,13 @@ public final class NetClient {
         Map<String, Integer> byId = new LinkedHashMap<>();
         Set<String> idSeen = new HashSet<>();
 
-        // ---- 0) + 1) + 2) 官方搜索 / 建议接口 / 网页搜索页并行（总预算内谁没回来就放弃谁）----
-        ExecutorService pool = Executors.newFixedThreadPool(3);
+        // ---- 0) + 1) 官方搜索 / 建议接口并行（总预算内谁没回来就放弃谁）----
+        // 网页搜索页腿已摘除（2026-11-24）：hongguoduanju.com/search/ 改成纯前端渲染壳
+        // （<div id="root"> 里只有 SSR 注释占位，数据全靠反爬 SDK 之后的 JS 拉取），
+        // 页面里不再有 _ROUTER_DATA，extractRouterData 必然「HG页面结构异常」。
+        // 这条腿不但拿不到结果，还把每次搜索的总时长拖到它失败为止（线上日志 14:31:58
+        // → 14:32:04 白等 6 秒 + 每次都刷一条 [E]）。官方腿 + 建议腿都已可用，摘掉即可。
+        ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
             long start = System.currentTimeMillis();
             long legsDeadline = start + SEARCH_LEGS_DEADLINE_MS;
@@ -2774,15 +2779,11 @@ public final class NetClient {
                     () -> fetchOfficialSearchDramas(keyword, officialDeadline, officialLive, sink));
             Future<List<Drama>> sugF = pool.submit(
                     () -> fetchSuggestDramas(keyword, SEARCH_SUGGEST_COUNT));
-            Future<List<Drama>> webF = pool.submit(() -> fetchSearchPageDramas(keyword));
             List<Drama> official = awaitOfficial(officialF, officialDeadline, officialLive);
             mergeDramas(merged, byId, idSeen, official);
             List<Drama> suggested = awaitLeg(sugF, legsDeadline, "建议接口");
             mergeDramas(merged, byId, idSeen, suggested);
             emitSearch(sink, suggested, false);
-            List<Drama> page = awaitLeg(webF, legsDeadline, "网页搜索页");
-            mergeDramas(merged, byId, idSeen, page);
-            emitSearch(sink, page, false);
         } finally {
             pool.shutdownNow();
         }
@@ -2845,30 +2846,6 @@ public final class NetClient {
                 return new ArrayList<>(live);
             }
         }
-    }
-
-    /** 网页版 /search/&lt;kw&gt; 解析（原逻辑，固定 10 条）。 */
-    private List<Drama> fetchSearchPageDramas(String keyword) throws Exception {
-        String url = WEB_SITE + "/search/" + encode(keyword);
-        JSONObject root = fetchRouterData(url, searchClient);
-        JSONObject pageObj = findLoaderPage(root, "search_");
-        List<Drama> result = new ArrayList<>();
-        if (pageObj == null || !pageObj.optBoolean("isSuccess", false)
-                || !keyword.equals(optText(pageObj, "query"))) {
-            return result;
-        }
-        JSONArray rows = pageObj.optJSONArray("searchList");
-        if (rows != null) {
-            for (int i = 0; i < rows.length(); i++) {
-                JSONObject row = rows.optJSONObject(i);
-                if (row == null) continue;
-                Drama d = parseDrama(row.optJSONObject("video_data"), row);
-                if (d != null && d.id != null && !d.id.isEmpty()) {
-                    result.add(d);
-                }
-            }
-        }
-        return result;
     }
 
     /**

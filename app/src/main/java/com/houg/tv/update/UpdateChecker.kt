@@ -452,6 +452,11 @@ object UpdateChecker {
         // ③ 老系统兜底：API < 24 还能把 file:// 交给别的应用。
         //    缓存目录在私有区，其它进程读不到，先复制到 App 专属外部目录
         //    （老系统外部存储世界可读，安装器能直接打开）。
+        //    线上（MiTV4 / Android 6.0.1 / 2.0.18）实测：content:// 与
+        //    ACTION_INSTALL_PACKAGE 双双 No Activity found，而外部目录复制又
+        //    ENOENT（getExternalFilesDir 挂了但 files/update 子目录建不出来），
+        //    三条路全断——用户永远停在旧版本。所以复制要多位置重试、并把「原始
+        //    私有路径的 file://」也试一轮（部分电视安装器有系统权限，读得到私有目录）。
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
             val copied = copyToExternalDir(context, apk)
             if (copied != null) {
@@ -462,9 +467,17 @@ object UpdateChecker {
                 }
                 if (launch(context, i)) return true
             }
+            // 最后再试原始私有路径：个别 ROM 的安装器以系统权限运行，读得到
+            // /data/data，只是不认 content://。失败照旧走下面的提示。
+            val raw = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(Uri.fromFile(apk), mime)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            }
+            if (launch(context, raw)) return true
         }
 
-        toast(context, "无法启动安装器，请在电视设置里允许安装未知应用后重试")
+        toast(context, "无法启动安装器：请在电视的文件管理器/U盘中安装本应用的更新包")
         return false
     }
 
@@ -478,24 +491,42 @@ object UpdateChecker {
         false
     }
 
-    /** API<24 兜底：复制安装包到 App 专属外部目录，返回可 file:// 使用的文件。 */
-    private fun copyToExternalDir(context: Context, apk: File): File? = try {
-        val base = context.getExternalFilesDir(null)
-        if (base == null) {
-            null
-        } else {
-            val dir = File(base, "update").apply { mkdirs() }
-            val target = File(dir, apk.name)
-            if (!target.isFile || target.length() != apk.length()) {
-                apk.inputStream().use { input ->
-                    target.outputStream().use { out -> input.copyTo(out) }
-                }
+    /** API<24 兜底：把安装包复制到「别的进程读得到」的目录，逐个位置试。 */
+    private fun copyToExternalDir(context: Context, apk: File): File? {
+        val candidates = ArrayList<File>()
+        try {
+            context.getExternalFilesDir(null)?.let { base ->
+                candidates.add(File(base, "update"))
+                candidates.add(base)
             }
-            target
+            context.getExternalCacheDir()?.let { candidates.add(it) }
+        } catch (e: Exception) {
+            AppLog.d(TAG, "外部目录枚举失败: " + (e.message ?: ""))
         }
-    } catch (e: Exception) {
-        AppLog.d(TAG, "复制安装包到外部目录失败: " + (e.message ?: ""))
-        null
+        for (dir in candidates) {
+            try {
+                // 原实现只 apply { mkdirs() } 不看结果：MiTV4 上 files/update 建不出来，
+                // 紧接着 open 就 ENOENT，整条兜底直接废掉。这里先确认目录真的在。
+                if (!dir.isDirectory && !dir.mkdirs()) {
+                    AppLog.d(TAG, "外部目录不可用（mkdirs 失败）: " + dir.path)
+                    continue
+                }
+                val target = File(dir, apk.name)
+                if (!target.isFile || target.length() != apk.length()) {
+                    apk.inputStream().use { input ->
+                        target.outputStream().use { out -> input.copyTo(out) }
+                    }
+                }
+                if (target.isFile && target.length() == apk.length()) {
+                    AppLog.d(TAG, "安装包已复制到可读目录: " + target.path)
+                    return target
+                }
+                target.delete()
+            } catch (e: Exception) {
+                AppLog.d(TAG, "复制安装包到 " + dir.path + " 失败: " + (e.message ?: ""))
+            }
+        }
+        return null
     }
 
     private fun toast(context: Context, msg: String) {
