@@ -10,6 +10,7 @@ import com.houg.tv.sign.HgCrypto;
 import com.houg.tv.sign.HostPool;
 import com.houg.tv.sign.MediaCrypto;
 import com.houg.tv.sign.PlaybackSigner;
+import com.houg.tv.sign.PlaybackSignerV5;
 import com.houg.tv.sign.SignedRequest;
 import com.houg.tv.util.AppLog;
 
@@ -1771,6 +1772,38 @@ public final class NetClient {
         try {
         outer:
         for (int round = 1; round <= 3; round++) {
+            // 2026-11-24：老端点被站点整段封禁（200 空体，换身份/域名无效），
+            // 上游已迁移到 v5 端点。v5 是唯一可能成功的主路径；v1 保留在 v5
+            // 也全空时做最后一搏（上游回切时的快速恢复路径，代价是几秒）。
+            if (System.currentTimeMillis() >= deadline) break outer; // BUG-107
+            {
+                byte[] v5Body = null;
+                try {
+                    v5Body = gzip(buildV5Body(vid));
+                } catch (Exception e) {
+                    AppLog.INSTANCE.e(TAG, "v5 body 构建失败（继续 v1 路径）", e);
+                }
+                if (v5Body != null) {
+                    try {
+                        JSONObject json = playbackPostV5(V5_PLAYER_URL, v5Body);
+                        if (json == null) {
+                            emptyBodyCount++;
+                            lastError = new Exception("播放接口空响应");
+                        } else {
+                            JSONObject model = extractVideoModel(json, vid);
+                            if (model != null) {
+                                AppLog.INSTANCE.d(TAG, "取流成功(v5) 空body=" + emptyBodyCount + " vid=" + vid);
+                                DeviceRegister.maybeRefillBackupsAsync(client);
+                                return model;
+                            }
+                            lastError = new Exception("HG播放信息为空");
+                        }
+                    } catch (Exception e) {
+                        lastError = e;
+                        networkErrorCount++;
+                    }
+                }
+            }
             for (int i = 0; i < attemptCount; i++) {
                 if (System.currentTimeMillis() >= deadline) break outer; // BUG-107
                 String host = HostPool.at(start + i);
@@ -1999,6 +2032,133 @@ public final class NetClient {
         }
     }
 
+    /** v5 播放取流端点（2026-11-24 上游迁移后的可用地址，仅 a 域名）。 */
+    private static final String V5_PLAYER_URL = PlaybackSignerV5.base();
+
+    /** v5 取流 body：dr_scene=player、bucket key 用 "1004"（与 v1 的 "1" 不同）。 */
+    private static byte[] buildV5Body(String vid) throws Exception {
+        JSONObject bizParam = new JSONObject();
+        bizParam.put("detail_page_version", 0);
+        bizParam.put("device_level", 1);
+        bizParam.put("disable_digg_stat", false);
+        bizParam.put("disable_video_relate_book", true);
+        bizParam.put("dr_scene", "player");
+        bizParam.put("need_all_video_definition", true);
+        bizParam.put("need_mp4_align", false);
+        bizParam.put("use_os_player", false);
+        bizParam.put("use_server_dns", false);
+        bizParam.put("video_platform", 1024);
+        JSONObject idMap = new JSONObject();
+        idMap.put("1004", new JSONArray().put(vid));
+        JSONObject body = new JSONObject();
+        body.put("biz_param", bizParam);
+        body.put("mixed_video_id_map", idMap);
+        return body.toString().getBytes(UTF8);
+    }
+
+    /** GZIP（确定头：mtime=0、OS=255），v5 取流 body 用。 */
+    private static byte[] gzip(byte[] data) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(new byte[]{0x1f, (byte) 0x8b, 8, 0, 0, 0, 0, 0, 0, (byte) 0xff}, 0, 10);
+        java.util.zip.Deflater def = new java.util.zip.Deflater(6, true);
+        try {
+            def.setInput(data);
+            def.finish();
+            byte[] buf = new byte[4096];
+            while (!def.finished()) {
+                int n = def.deflate(buf);
+                out.write(buf, 0, n);
+            }
+        } finally {
+            def.end();
+        }
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        crc.update(data);
+        long v = crc.getValue();
+        for (int i = 0; i < 4; i++) out.write((int) ((v >>> (8 * i)) & 255));
+        long isz = data.length;
+        for (int i = 0; i < 4; i++) out.write((int) ((isz >>> (8 * i)) & 255));
+        return out.toByteArray();
+    }
+
+    /**
+     * v5 播放器签名通道（2026-11-24 端点迁移）：PlaybackSignerV5（gzip body +
+     * x-khronos/x-helios/x-medusa）+ 设备注册 Cookie。返回 null 表示「200 + 空 body」。
+     */
+    private JSONObject playbackPostV5(String url, byte[] gzipPayload) throws Exception {
+        // v5 的 query 参数集照抄上游实测样本（vivo PGT-AN10 / channel vivo_8662_64），
+        // medusa 的 env 里也带同一组 channel/version，两边必须一致。
+        String dev = DeviceRegister.deviceId();
+        String iid = DeviceRegister.installId();
+        Map<String, String> profile = new LinkedHashMap<>();
+        profile.put("aid", "8662");
+        profile.put("app_name", "novelread");
+        profile.put("version_code", "74332");
+        profile.put("version_name", "7.4.3.32");
+        profile.put("channel", "vivo_8662_64");
+        profile.put("device_platform", "android");
+        profile.put("device_type", "PGT-AN10");
+        profile.put("os_version", "12");
+        profile.put("update_version_code", "74332");
+        profile.put("device_id", dev == null ? "" : dev.trim());
+        profile.put("iid", iid == null ? "" : iid.trim());
+        profile.put("ac", "wifi");
+        profile.put("os", "android");
+        profile.put("ssmix", "a");
+        profile.put("device_brand", "vivo");
+        profile.put("language", "zh");
+        profile.put("os_api", "31");
+        profile.put("manifest_version_code", "74332");
+        profile.put("resolution", "1080*2400");
+        profile.put("dpi", "480");
+        profile.put("host_abi", "arm64-v8a");
+        profile.put("dragon_device_type", "phone");
+        profile.put("compliance_status", "0");
+        profile.put("need_personal_recommend", "1");
+        profile.put("player_so_load", "1");
+        profile.put("is_android_pad_screen", "0");
+        PlaybackSignerV5.Request req = PlaybackSignerV5.sign(url, profile, gzipPayload);
+        Request.Builder rb = new Request.Builder().url(req.url);
+        for (Map.Entry<String, String> e : req.headers.entrySet()) {
+            rb.header(e.getKey(), e.getValue());
+        }
+        rb.header("User-Agent", PlaybackSignerV5.UA);
+        rb.header("Content-Encoding", "gzip");
+        rb.header("Accept", "application/json");
+        rb.header("sdk-version", "2");
+        rb.header("x-tt-request-tag", "t=0;n=0");
+        String cookie = DeviceRegister.cookieHeader();
+        if (!cookie.isEmpty()) {
+            rb.header("Cookie", cookie);
+        }
+        rb.post(RequestBody.create(JSON_TYPE, gzipPayload));
+        AppLog.INSTANCE.d(TAG, "PLAYBACK-V5 POST " + req.url);
+        try (Response resp = client.newCall(rb.build()).execute()) {
+            int code = resp.code();
+            byte[] bytes = resp.body() == null ? new byte[0] : resp.body().bytes();
+            String text = new String(bytes, UTF8);
+            AppLog.INSTANCE.d(TAG, "PLAYBACK-V5 -> HTTP " + code + " len=" + bytes.length
+                    + " body=" + (text.length() > 400 ? text.substring(0, 400) : text));
+            checkClockSkew(resp.header("Date"));
+            if (code != 200) {
+                throw new Exception("v5 播放接口 HTTP " + code);
+            }
+            if (text.isEmpty()) {
+                AppLog.INSTANCE.d(TAG, "PLAYBACK-V5 空 body 头 | via=" + resp.header("via")
+                        + " | logid=" + resp.header("X-Tt-Logid")
+                        + " | ip=" + resp.header("x-request-ip")
+                        + " | origin=" + resp.header("X-Dsa-Origin-Status"));
+                return null;
+            }
+            JSONObject json = new JSONObject(text);
+            int bizCode = json.optInt("Code", json.optInt("code", 0));
+            if (bizCode != 0) {
+                throw new Exception("v5 播放接口业务码 " + bizCode);
+            }
+            return json;
+        }
+    }
+
     /**
      * 播放器签名通道：PlaybackSigner（branch-0 抖动 + 完整 Argus/Ladon + helios）+ 设备注册 Cookie。
      * 返回 null 表示「200 + 空 body」（网关挡掉），由调用方原地重试。
@@ -2108,6 +2268,26 @@ public final class NetClient {
             // data[vid] 本身就是 video_model（个别形态）
             if (item.optJSONArray("video_list") != null) return item;
             return null;
+        }
+
+        // v5 端点形态：data["1004"][vid]（mixed_video_id_map 按 bucket key 分组）
+        JSONObject bucket = data.optJSONObject("1004");
+        if (bucket != null) {
+            Object bEntry = bucket.opt(vid);
+            if (bEntry instanceof JSONObject) {
+                JSONObject model = optModelObject(((JSONObject) bEntry).opt("video_model"));
+                if (model != null) return model;
+            }
+            if (bucket.length() > 0) {
+                // bucket 里键名与 vid 不一致时取第一个条目兜底
+                java.util.Iterator<String> keys = bucket.keys();
+                while (keys.hasNext()) {
+                    Object v = bucket.opt(keys.next());
+                    JSONObject model = (v instanceof JSONObject)
+                            ? optModelObject(((JSONObject) v).opt("video_model")) : null;
+                    if (model != null) return model;
+                }
+            }
         }
 
         // 兼容：响应没有按 vid 分组，data 直接就是 model（或 model 的包装）。
