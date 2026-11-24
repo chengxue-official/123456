@@ -453,6 +453,7 @@ class PlayerActivity : AppCompatActivity() {
 
         override fun onRenderedFirstFrame() {
             firstFrameRendered = true
+            lastVideoFrameAt = System.currentTimeMillis()
             AppLog.d("PlayerActivity", "首帧渲染 编码=" + currentVariantCodec + playbackTag())
             // 真正出画面的那一刻才收起转圈（无感切集的核心：有画面就不该有 loading）
             hideLoading()
@@ -593,6 +594,30 @@ class PlayerActivity : AppCompatActivity() {
     /** 上次记录「画面渲染落后」日志的时间（见 [frameAnalytics] 的偏移回调）。 */
     private var lastDriftLogAt = 0L
 
+    /**
+     * 最近一次有视频帧真正渲染出来的时间（[frameAnalytics] 的帧偏移回调刷新）。
+     * 「声音照走、画面停住」的判定依据，见 [checkVideoStall]。
+     */
+    @Volatile
+    private var lastVideoFrameAt = 0L
+
+    /** 进度看门狗的两个采样点：上次采样到的播放位置 / 该位置最后一次变化的时间。 */
+    private var stallSamplePos = 0L
+    private var stallSampleAt = 0L
+
+    /** 本集已执行过的停滞自救次数（第一次 seek，第二次弃缓存重建播放器）。 */
+    private var stallRecoveries = 0
+
+    /** 本集已重建播放器的次数：上限 [STALL_MAX_REBUILDS] 次，防止源本身坏掉时无限重建。 */
+    private var stallRebuilds = 0
+
+    /** 上次自救时间：两次自救之间至少间隔 [STALL_RECOVER_GAP_MS]，避免 500ms 轮询连环触发。 */
+    private var lastStallRecoverAt = 0L
+
+    /** 最近一次实际启用的视频解码器名（停滞日志用，线上据此判断是不是厂商解码器楔死）。 */
+    @Volatile
+    private var lastDecoderName = ""
+
     /** 软解降速提示是否已经弹过（每次进入播放器只提醒一次，不每集都弹）。 */
     private var softSpeedCapNotified = false
 
@@ -615,6 +640,7 @@ class PlayerActivity : AppCompatActivity() {
             // 不含上面的关键字，漏判会让软解期倍速不封顶、预载不关（BUG-135）。
             // 用于预载开关（软解 + 预载并发会把低内存盒子压到 OOM，见 softDecoding）。
             val n = decoderName.lowercase()
+            lastDecoderName = decoderName
             softDecoding = n.contains("google") || n.contains("software") || n.contains("sw.")
                     || n.contains("c2.android") || n.contains("c2.google")
             AppLog.d("PlayerActivity", "视频解码器=" + decoderName
@@ -652,6 +678,9 @@ class PlayerActivity : AppCompatActivity() {
             totalProcessingOffsetUs: Long,
             frameCount: Int
         ) {
+            // 这个回调每渲染一帧就来一次（下面的限流只在打日志时生效），
+            // 所以它天然就是「画面还在动」的心跳，见 [checkVideoStall]。
+            lastVideoFrameAt = System.currentTimeMillis()
             if (totalProcessingOffsetUs > -500_000L) return // 落后不足半秒（正值=提前，直接忽略）
             val now = System.currentTimeMillis()
             if (now - lastDriftLogAt < 10_000L) return
@@ -1035,6 +1064,12 @@ class PlayerActivity : AppCompatActivity() {
         firstFrameRendered = false
         av1SoftRetried = false
         availableHeights = emptySet()
+        // 新一集 = 新的停滞判定上下文：基准与自救计数全部清零
+        stallRecoveries = 0
+        stallRebuilds = 0
+        lastVideoFrameAt = 0L
+        stallSamplePos = 0L
+        stallSampleAt = 0L
 
         updateEpisodeInfo()
         // 无感切集：不立刻弹转圈，延迟 400ms 仍没出画面再显示（见 scheduleLoading）
@@ -2950,6 +2985,86 @@ class PlayerActivity : AppCompatActivity() {
 
     /* ==================== 进度刷新（500ms） ==================== */
 
+    /**
+     * 播放停滞（画面冻住）看门狗。
+     *
+     * 线上证据（2026-11-24 ChangHong Android TV / Android 5.1 / 983MB / 2.1.8，
+     * 用户报「自动连播进下一集卡住，要退出重进才能看」）：连播切到下一集后
+     * 只出现一次 `首帧渲染`，之后**既没有 onPlayerError、也没有 STATE 变化、
+     * 弹幕窗口请求也停在 window=0**——播放器彻底楔死，进度不再前进。
+     * 同一集改走「现场取流+整集下载」重播则全程正常（ep5：14:28 命中缓存两次
+     * 都卡死，14:34 重新下载从 30s 续播一路播完）。7 次「命中预加载缓存」切集
+     * 卡死 4 次，全部走整集下载起播的一次都没卡。
+     *
+     * 两种停滞都要抓（各自独立的信号）：
+     *  - 进度冻结：`isPlaying && STATE_READY` 却连续 [VIDEO_STALL_MS] 拿不到新的
+     *    currentPosition——整条链路（含音频时钟）死了，这是本例的形态；
+     *  - 仅画面冻结：进度在走但连续 [VIDEO_STALL_MS] 没有任何一帧渲染——即以前
+     *    录屏看到的「同一帧重复、声音照走」。
+     *
+     * 自救分两级，代价从小到大；**不自动降清晰度、不碰帧率跟随**（2.1.7 那版
+     * 被整体回退，本次只保留「发现卡住并救回来」这一件事）：
+     *  1. 原地 seek：强制解码器 flush 重建，多数瞬时楔死这一步就够；
+     *  2. 再次停滞：弃用本集明文缓存 + 重建播放器重走取流——等价于替用户做
+     *     「退出重进」，也正是线上唯一被验证有效的恢复手段。
+     * 每集最多重建 [STALL_MAX_REBUILDS] 次，超限不再动（源本身坏掉时避免无限重建闪屏）。
+     */
+    private fun checkVideoStall(p: ExoPlayer) {
+        val now = System.currentTimeMillis()
+        val pos = try { p.currentPosition } catch (_: Exception) { stallSamplePos }
+        // 暂停 / 缓冲 / 拖动进度条 / 切集准备期：画面与进度本来就不该动，重置基准
+        if (!p.isPlaying || p.playbackState != Player.STATE_READY) {
+            lastVideoFrameAt = now
+            stallSamplePos = pos
+            stallSampleAt = now
+            return
+        }
+        if (lastVideoFrameAt == 0L) lastVideoFrameAt = now
+        if (stallSampleAt == 0L) stallSampleAt = now
+        if (pos != stallSamplePos) {
+            stallSamplePos = pos
+            stallSampleAt = now
+        }
+        if (now - lastStallRecoverAt < STALL_RECOVER_GAP_MS) return
+
+        val frameFrozenMs = now - lastVideoFrameAt
+        val posFrozenMs = now - stallSampleAt
+        if (frameFrozenMs < VIDEO_STALL_MS && posFrozenMs < VIDEO_STALL_MS) return
+
+        lastStallRecoverAt = now
+        stallRecoveries++
+        val hard = posFrozenMs >= VIDEO_STALL_MS
+        AppLog.d("PlayerActivity", "画面停滞 帧停=" + frameFrozenMs + "ms 进度停=" + posFrozenMs
+                + "ms 位置=" + pos + " 解码器=" + lastDecoderName + " 硬解=" + !softDecoding
+                + " 类型=" + (if (hard) "整体冻结" else "仅画面")
+                + " 第" + stallRecoveries + "次自救" + playbackTag())
+        // 基准跟着重置，否则下一次 500ms 轮询立刻又判一遍停滞
+        lastVideoFrameAt = now
+        stallSampleAt = now
+
+        if (stallRecoveries >= 2) {
+            if (stallRebuilds >= STALL_MAX_REBUILDS) {
+                AppLog.d("PlayerActivity", "画面反复停滞，已重建 " + stallRebuilds + " 次，停止自救")
+                return
+            }
+            stallRebuilds++
+            stallRecoveries = 0
+            // 先落盘当前进度，重建后靠历史续播接回原位置（rebuildPlayer 走的这条链路）
+            try { recordHistory(force = true) } catch (_: Exception) {}
+            // 弃用本集明文缓存：线上卡死全部发生在「命中预加载缓存」的件上，
+            // 现场重新取流+下载是验证过的有效恢复路径
+            clearVidCacheFiles(vidList.getOrNull(currentPos))
+            toast("画面卡住，正在重新连接")
+            rebuildPlayer()
+            return
+        }
+        // 轻量重同步：原地 seek 触发解码器 flush 重建
+        try {
+            p.seekTo(pos)
+        } catch (_: Exception) {
+        }
+    }
+
     private val progressRunnable = object : Runnable {
         override fun run() {
             val p = player
@@ -2970,6 +3085,8 @@ class PlayerActivity : AppCompatActivity() {
                 updateDanmaku(p, pos, dur)
                 // 周期性落盘进度（节流 10s），保证异常退出也不丢进度
                 recordHistory(force = false)
+                // 画面/进度冻住（线上 ChangHong 连播切集后卡死）→ 分级自救，见 [checkVideoStall]
+                checkVideoStall(p)
             }
             handler.postDelayed(this, 500)
         }
@@ -3390,6 +3507,20 @@ class PlayerActivity : AppCompatActivity() {
     companion object {
         /** AV1（bytevc2）集「有声黑屏」的判定时限，见 [armAv1FirstFrameWatch]。 */
         private const val AV1_FIRST_FRAME_TIMEOUT_MS = 8000L
+
+        /**
+         * 播放停滞判定阈值（见 [checkVideoStall]）：播放中超过这么久没有新帧渲染、
+         * 或 currentPosition 一直不前进，即判定「画面冻住」。
+         * 3s 足够长，不会把拖动/缓冲/切集的正常空窗算进来。
+         */
+        private const val VIDEO_STALL_MS = 3000L
+
+        /** 两次停滞自救的最小间隔：避免 500ms 轮询在没救回来时连环触发。 */
+        private const val STALL_RECOVER_GAP_MS = 15_000L
+
+        /** 每集最多「弃缓存 + 重建播放器」的次数，超出就停止自救（源本身坏掉时防无限闪屏）。 */
+        private const val STALL_MAX_REBUILDS = 2
+
         const val EXTRA_SERIES_ID = "series_id"
         const val EXTRA_TITLE = "title"
         const val EXTRA_COVER = "cover"
