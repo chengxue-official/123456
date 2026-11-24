@@ -232,6 +232,8 @@ class MainActivity : AppCompatActivity() {
     private fun setupDock() {
         val actions = mapOf<String, () -> Unit>(
             "home" to { recycler.smoothScrollToPosition(0) },
+            // 刷短剧：抖音式连续流，一键进播放页开刷（无需选剧）
+            "feed" to { openFeed() },
             "recommend" to { startActivity(Intent(this, RecommendActivity::class.java)) },
             "category" to { startActivity(Intent(this, CategoryActivity::class.java)) },
             "rank" to { startActivity(Intent(this, RankActivity::class.java)) },
@@ -254,6 +256,7 @@ class MainActivity : AppCompatActivity() {
         data class DockEntry(val key: String, val itemId: Int, val labelId: Int, val barId: Int)
         listOf(
             DockEntry("home", R.id.dock_home, R.id.dock_home_label, R.id.dock_home_bar),
+            DockEntry("feed", R.id.dock_feed, R.id.dock_feed_label, R.id.dock_feed_bar),
             DockEntry("recommend", R.id.dock_recommend, R.id.dock_recommend_label, R.id.dock_recommend_bar),
             DockEntry("category", R.id.dock_category, R.id.dock_category_label, R.id.dock_category_bar),
             DockEntry("rank", R.id.dock_rank, R.id.dock_rank_label, R.id.dock_rank_bar),
@@ -275,6 +278,54 @@ class MainActivity : AppCompatActivity() {
                 // 首页是当前页，指示条常亮
                 bar.visibility =
                     if (hasFocus || entry.key == "home") View.VISIBLE else View.INVISIBLE
+            }
+        }
+    }
+
+    /* ==================== 刷短剧入口 ==================== */
+
+    /** 防抖：推荐流请求进行中时忽略重复触发 */
+    private var feedOpening = false
+
+    /**
+     * 刷短剧（抖音式连续流）：拉一条推荐流，把剧名列表交给 PlayerActivity 的
+     * feed 模式——进去就是全屏正片，一部播完自动接下一部，上下键跨剧切换。
+     * 每次进入随机重排，才有「刷」的新鲜感。
+     */
+    private fun openFeed() {
+        if (feedOpening) return
+        feedOpening = true
+        progress.visibility = View.VISIBLE
+        scope.launch {
+            try {
+                val page = withContext(Dispatchers.IO) {
+                    // 推荐流：三大类混合 + 服务端 hot_score 排序（同推荐页数据源）
+                    App.netClient.recommend(0, "")
+                }
+                val dramas = page.dramas.filter { it.id.isNotEmpty() }
+                if (dramas.isEmpty()) {
+                    Toast.makeText(this@MainActivity, R.string.feed_empty, Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                val picked = dramas.shuffled()
+                startActivity(
+                    Intent(this@MainActivity, PlayerActivity::class.java)
+                        .putStringArrayListExtra(
+                            PlayerActivity.EXTRA_FEED_IDS, ArrayList(picked.map { it.id }))
+                        .putStringArrayListExtra(
+                            PlayerActivity.EXTRA_FEED_TITLES, ArrayList(picked.map { it.title }))
+                        .putStringArrayListExtra(
+                            PlayerActivity.EXTRA_FEED_COVERS, ArrayList(picked.map { it.cover }))
+                        .putExtra(PlayerActivity.EXTRA_FEED_INDEX, 0)
+                        // 翻页游标跟着首页这次请求走，feed 播完存量后接着要下一页
+                        .putExtra(PlayerActivity.EXTRA_FEED_OFFSET, page.nextOffset)
+                        .putExtra(PlayerActivity.EXTRA_FEED_SESSION, page.sessionId)
+                )
+            } catch (e: Throwable) {
+                Toast.makeText(this@MainActivity, R.string.feed_load_failed, Toast.LENGTH_SHORT).show()
+            } finally {
+                feedOpening = false
+                progress.visibility = View.GONE
             }
         }
     }

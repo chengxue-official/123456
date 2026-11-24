@@ -134,6 +134,23 @@
                     style="@style/DockBar" />
             </LinearLayout>
 
+            <!-- 刷短剧：抖音式连续流，一键进入开刷（放最前面，遥控器左起第一项就是它） -->
+            <LinearLayout
+                android:id="@+id/dock_feed"
+                style="@style/DockItem"
+                android:tag="feed"
+                android:layout_marginStart="24dp">
+
+                <TextView
+                    android:id="@+id/dock_feed_label"
+                    style="@style/DockLabel"
+                    android:text="@string/nav_feed" />
+
+                <View
+                    android:id="@+id/dock_feed_bar"
+                    style="@style/DockBar" />
+            </LinearLayout>
+
             <LinearLayout
                 android:id="@+id/dock_recommend"
                 style="@style/DockItem"

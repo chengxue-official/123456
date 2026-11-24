@@ -286,6 +286,28 @@ class PlayerActivity : AppCompatActivity() {
     private var retryIdentityJob: Job? = null
     private lateinit var danmakuView: DanmakuView
 
+    // ===== 刷短剧（feed）模式：抖音式连续流 =====
+    /**
+     * feed 模式：[feedIds] 是推荐流的 series_id 列表（MainActivity 已随机打乱），
+     * [feedIndex] 指当前剧。进去先拉第一部的集列表开播；一部播完自动接下一部，
+     * 上下键在「上一部/下一部」间切换（同剧内的集切换交给自动连播与选集弹窗）。
+     * 普通模式这三个字段为 null，行为与旧版完全一致。
+     */
+    private var feedIds: List<String>? = null
+    private var feedTitles: List<String>? = null
+    private var feedCovers: List<String>? = null
+    private var feedIndex = -1
+    /** feed 推荐流翻页游标：存量播完时向服务端再要一页，实现无限刷 */
+    private var feedOffset = 0
+    private var feedSession = ""
+    private var feedHasMore = true
+    /** feed 拉取去重（连播触发与手动触发可能重叠） */
+    private var feedOpening = false
+    /** feed 翻页去重（与 feedOpening 分开：翻页不该挡换剧） */
+    private var feedPaging = false
+    /** 连续拉不到剧的部数（空剧/失败），达到存量总数就停住，避免打转 */
+    private var feedEmptyStreak = 0
+
     // ===== 选集弹窗 =====
     private lateinit var epPickerRoot: View
     private lateinit var epPickerTitle: TextView
@@ -798,6 +820,20 @@ class PlayerActivity : AppCompatActivity() {
         epList = intent.getIntegerArrayListExtra(EXTRA_EP_LIST) ?: emptyList()
         currentPos = intent.getIntExtra(EXTRA_EPISODE_POS, 0)
             .coerceIn(0, (vidList.size - 1).coerceAtLeast(0))
+        // 刷短剧模式：剧单由首页传入，剧集列表在 loadFeedSeries 里按 series_id 现拉
+        val ids = intent.getStringArrayListExtra(EXTRA_FEED_IDS)
+        if (ids != null && ids.isNotEmpty()) {
+            feedIds = ids
+            feedTitles = intent.getStringArrayListExtra(EXTRA_FEED_TITLES)
+            feedCovers = intent.getStringArrayListExtra(EXTRA_FEED_COVERS)
+            feedIndex = intent.getIntExtra(EXTRA_FEED_INDEX, 0)
+                .coerceIn(0, ids.size - 1)
+            feedOffset = intent.getIntExtra(EXTRA_FEED_OFFSET, 0)
+            feedSession = intent.getStringExtra(EXTRA_FEED_SESSION) ?: ""
+            seriesId = ids[feedIndex]
+            title = feedTitles?.getOrNull(feedIndex) ?: ""
+            cover = feedCovers?.getOrNull(feedIndex) ?: ""
+        }
 
         surfaceView = findViewById(R.id.video_surface)
         videoContainer = findViewById(R.id.video_container)
@@ -919,7 +955,13 @@ class PlayerActivity : AppCompatActivity() {
             try { findViewById<View>(R.id.focus_anchor).requestFocus() } catch (_: Exception) {}
         }
         handler.post(progressRunnable)
-        playCurrent()
+        if (feedMode()) {
+            // 刷短剧：进来直接开刷第一部第 1 集（先拉 detail 拿集列表再起播）
+            toast(getString(R.string.feed_swipe_hint))
+            loadFeedSeries(feedIndex, 0)
+        } else {
+            playCurrent()
+        }
     }
 
     private fun bindControls() {
@@ -2560,7 +2602,135 @@ class PlayerActivity : AppCompatActivity() {
         // 才解除抑制，否则新集准备期间的 STATE_ENDED 会被误判成"本集播完"再次切集。
     }
 
-    /* ==================== 手机端上下滑切集（抖音式） ==================== */
+    /* ==================== 刷短剧（feed） ==================== */
+
+    /** 是否处于刷短剧模式（首页 dock「刷短剧」进入）。 */
+    private fun feedMode(): Boolean = feedIds != null
+
+    /**
+     * 拉第 [idx] 部剧的集列表并从第 [startEpPos] 集开播（0-based；传负数表示最后一集）。
+     *
+     * feed 的换剧不走 [switchEpisode]（那是同剧内按 vidList 下标切），而是整组
+     * 替换 seriesId/title/vidList/epList 后重走 [playCurrent]——续播历史、预加载
+     * 缓存、弹幕上下文全部按新剧算，与从详情页进入完全一致。
+     *
+     * 拉 detail 失败/空剧时自动顺延下一部（最多把存量试一遍），保证「刷」不断档。
+     */
+    private fun loadFeedSeries(idx: Int, startEpPos: Int = 0) {
+        val ids = feedIds ?: return
+        if (idx < 0 || idx >= ids.size) return
+        if (feedOpening) return
+        feedOpening = true
+        // 复用切集准备期的状态：抑制杂散 STATE_ENDED、隐藏/恢复转圈、超时兜底
+        switchingEpisode = true
+        switchStartedAt = System.currentTimeMillis()
+        handler.removeCallbacks(switchGuardRunnable)
+        handler.postDelayed(switchGuardRunnable, SWITCH_GUARD_MS)
+        player?.pause()
+        scheduleLoading()
+        scope.launch {
+            try {
+                val detail = withContext(Dispatchers.IO) {
+                    App.netClient.detail(ids[idx])
+                }
+                if (idx != feedIndex) return@launch
+                if (detail.episodes.isEmpty()) {
+                    // 空剧（推荐流里的下架/异常剧）：静默跳下一部，不打断「刷」的节奏
+                    AppLog.d("PlayerActivity", "feed 空剧跳过 id=" + ids[idx])
+                    feedOpening = false
+                    feedSkipBroken()
+                    return@launch
+                }
+                seriesId = detail.seriesId
+                title = feedTitles?.getOrNull(idx) ?: detail.title
+                cover = feedCovers?.getOrNull(idx) ?: detail.cover
+                val sorted = detail.episodes.sortedBy { it.index }
+                vidList = sorted.map { it.vid }
+                epList = sorted.map { it.index }
+                currentPos = if (startEpPos < 0) vidList.size - 1
+                             else startEpPos.coerceIn(0, vidList.size - 1)
+                loadedPos = -1
+                feedEmptyStreak = 0
+                feedOpening = false
+                AppLog.d("PlayerActivity", "刷短剧 第" + (idx + 1) + "/" + ids.size
+                        + " 部 series=" + detail.seriesId + " 集数=" + vidList.size
+                        + " 起播=" + currentPos)
+                playCurrent()
+            } catch (e: Throwable) {
+                if (e is java.util.concurrent.CancellationException) return@launch
+                AppLog.e("PlayerActivity", "feed 拉取剧集失败 idx=$idx", e)
+                feedOpening = false
+                feedSkipBroken()
+            }
+        }
+    }
+
+    /** 一部拉不下来：顺延下一部；存量全试遍仍不行就停住提示（避免递归打转）。 */
+    private fun feedSkipBroken() {
+        feedEmptyStreak++
+        val total = feedIds?.size ?: 0
+        if (total == 0 || feedEmptyStreak >= total) {
+            feedEmptyStreak = 0
+            hideLoading()
+            switchingEpisode = false
+            releaseSwitchGuard()
+            toast(getString(R.string.feed_empty))
+            showControls()
+            return
+        }
+        loadFeedSeries(nextFeedIndex(1))
+    }
+
+    /** feed 内取下一/上一部的下标；正向下标越界时补一页，再没有就回卷到第 0 部。 */
+    private fun nextFeedIndex(step: Int): Int {
+        val ids = feedIds ?: return 0
+        var next = feedIndex + step
+        if (step > 0 && next >= ids.size) {
+            if (feedHasMore) prefetchFeedPage()
+            next = 0
+        }
+        if (next < 0) next = ids.size - 1
+        feedIndex = next
+        return next
+    }
+
+    /** 异步追加一页推荐流到 feed 列表（独立于 feedOpening，最多一次在途，失败静默）。 */
+    private fun prefetchFeedPage() {
+        if (feedPaging || !feedHasMore) return
+        feedPaging = true
+        scope.launch {
+            try {
+                val page = withContext(Dispatchers.IO) {
+                    App.netClient.recommend(feedOffset, feedSession)
+                }
+                feedHasMore = page.hasMore
+                feedOffset = page.nextOffset
+                feedSession = page.sessionId
+                val known = feedIds ?: emptyList()
+                val rows = page.dramas.filter { it.id.isNotEmpty() && it.id !in known }
+                if (rows.isNotEmpty()) {
+                    feedIds = known + rows.map { it.id }
+                    feedTitles = (feedTitles ?: emptyList()) + rows.map { it.title }
+                    feedCovers = (feedCovers ?: emptyList()) + rows.map { it.cover }
+                    AppLog.d("PlayerActivity", "feed 追加 " + rows.size
+                            + " 部，总数=" + (feedIds?.size ?: 0))
+                }
+            } catch (e: Throwable) {
+                AppLog.d("PlayerActivity", "feed 翻页失败（忽略）: " + (e.message ?: ""))
+            } finally {
+                feedPaging = false
+            }
+        }
+    }
+
+    /**
+     * 本部剧播完（自动连播）→ 接下一部第 1 集。
+     * 普通模式播完是「停住/提示」，feed 的核心就是永远有下一步。
+     */
+    private fun feedAutoAdvance() {
+        toast(getString(R.string.feed_switch_next))
+        loadFeedSeries(nextFeedIndex(1))
+    }
 
     /**
      * 画面上下滑动切集：上滑 = 下一集，下滑 = 上一集。
@@ -2649,6 +2819,9 @@ class PlayerActivity : AppCompatActivity() {
                 toast(getString(R.string.ep_finished_auto_off, currentEpisode().toString()))
                 showControls()
             }
+        } else if (feedMode() && autoNext) {
+            // 刷短剧：一部播完自动接下一部第 1 集（「刷」的核心是永远有下一步）
+            feedAutoAdvance()
         } else {
             // 末集播完：不再自动退出（那是"闪退回选集"的观感），停在原地给提示
             toast(getString(R.string.ep_played_out))
@@ -3194,15 +3367,30 @@ class PlayerActivity : AppCompatActivity() {
                 quickSeek(1, event.repeatCount)
                 return true
             }
-            // 上下键：上一集 / 下一集
+            // 上下键：上一集 / 下一集；刷短剧模式下跨过集边界 = 跨剧
+            // （上：第一部时退回上一部最后一集；下：最后一集时进下一部第 1 集）
             KeyEvent.KEYCODE_DPAD_UP,
             KeyEvent.KEYCODE_CHANNEL_UP -> {
-                switchEpisode(currentPos - 1)
+                if (currentPos > 0) {
+                    switchEpisode(currentPos - 1)
+                } else if (feedMode()) {
+                    recordHistory(force = true)
+                    loadFeedSeries(nextFeedIndex(-1), -1)
+                } else {
+                    toast(getString(R.string.first_episode))
+                }
                 return true
             }
             KeyEvent.KEYCODE_DPAD_DOWN,
             KeyEvent.KEYCODE_CHANNEL_DOWN -> {
-                switchEpisode(currentPos + 1)
+                if (currentPos + 1 < vidList.size) {
+                    switchEpisode(currentPos + 1)
+                } else if (feedMode()) {
+                    recordHistory(force = true)
+                    feedAutoAdvance()
+                } else {
+                    toast(getString(R.string.last_episode))
+                }
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_PAUSE -> {
@@ -3574,6 +3762,17 @@ class PlayerActivity : AppCompatActivity() {
         const val EXTRA_SERIES_ID = "series_id"
         const val EXTRA_TITLE = "title"
         const val EXTRA_COVER = "cover"
+
+        // ===== 刷短剧（feed）模式 extras =====
+        /** 剧单：series_id / 剧名 / 封面，三个列表按下标一一对应 */
+        const val EXTRA_FEED_IDS = "feed_ids"
+        const val EXTRA_FEED_TITLES = "feed_titles"
+        const val EXTRA_FEED_COVERS = "feed_covers"
+        /** 进入时从第几部开始（默认 0） */
+        const val EXTRA_FEED_INDEX = "feed_index"
+        /** 推荐流翻页游标：延续首页那次请求的 session/offset，避免重复取到同一页 */
+        const val EXTRA_FEED_OFFSET = "feed_offset"
+        const val EXTRA_FEED_SESSION = "feed_session"
         /** 起始位置下标（0-based），非集号 */
         const val EXTRA_EPISODE_POS = "episode_pos"
         const val EXTRA_VID_LIST = "vid_list"

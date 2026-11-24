@@ -9,6 +9,7 @@
     <string name="nav_update">检查更新</string>
     <string name="nav_category">分类</string>
     <string name="nav_recommend">推荐</string>
+    <string name="nav_feed">刷短剧</string>
     <string name="recommend_sub">为你精选</string>
 
     <!-- 分类 -->
@@ -105,6 +106,12 @@
     <string name="first_episode">已经是第一集了</string>
     <string name="ep_played_out">已播放完最后一集</string>
     <string name="ep_finished_auto_off">已播完第 %1$s 集，自动连播已关闭</string>
+    <!-- 刷短剧（feed）模式 -->
+    <string name="feed_switch_next">换一部</string>
+    <string name="feed_loading">正在为你挑剧…</string>
+    <string name="feed_load_failed">推荐流加载失败，按确认键重试</string>
+    <string name="feed_empty">暂时没有可看的短剧</string>
+    <string name="feed_swipe_hint">↑↓ 上下换剧 · OK 暂停 · 菜单键操作</string>
     <string name="seek_forward">快进 %1$s</string>
     <string name="seek_backward">快退 %1$s</string>
     <string name="menu_open">菜单</string>
