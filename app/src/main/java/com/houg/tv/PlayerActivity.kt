@@ -3878,7 +3878,15 @@ class PlayerActivity : AppCompatActivity() {
          * 或 currentPosition 一直不前进，即判定「画面冻住」。
          * 3s 足够长，不会把拖动/缓冲/切集的正常空窗算进来。
          */
-        private const val VIDEO_STALL_MS = 3000L
+        /**
+         * 画面停滞判定阈值。
+         *
+         * 原来 3000ms：线上反馈「卡 1 秒多之后音画就不同步了」——低于阈值不触发自救，
+         * 画面恢复后一直落后音频（ExoPlayer 不会主动追），只能切集才好。
+         * 降到 1000ms：一次 1.2s 的冻屏就能被抓住，走「原地 seek 重同步」把画面拉回音频位置。
+         * 静态画面不会误判：视频帧仍在按时间戳渲染，帧心跳照常（见 frameHeartbeat）。
+         */
+        private const val VIDEO_STALL_MS = 1000L
 
         /** 两次停滞自救的最小间隔：避免 500ms 轮询在没救回来时连环触发。 */
         private const val STALL_RECOVER_GAP_MS = 15_000L
