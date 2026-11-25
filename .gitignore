@@ -9,6 +9,8 @@ local.properties
 .DS_Store
 *.ap_
 *.dex
+# assets 里的 HGTV 签名 dex 是发布物（运行时加载生成 v5 签名），必须入库
+!app/src/main/assets/hgtv/classes.dex
 _jvmprobe/out/
 _jvmprobe/outkotlin/
 *.class
