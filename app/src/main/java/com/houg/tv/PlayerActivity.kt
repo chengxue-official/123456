@@ -3368,7 +3368,7 @@ class PlayerActivity : AppCompatActivity() {
         // 仅画面停滞＝解码器喂不上帧（进度/声音都在走）。这不是流坏了，重建同档只会
         // 再卡一次（2.2.4 v5 只下发 encrypted HEVC 后尤其明显），自动档下直接降一档：
         // 1080→720→480，480 以下不再降（已无算力收益）。用户手动选档时不干预。
-        if (!hard && qualityIndex == QUALITY_AUTO) {
+        if (STALL_AUTO_DOWNGRADE && !hard && qualityIndex == QUALITY_AUTO) {
             // 实际正在播的档（服务端可能无视上限回更高的档，此时以实际档为基准）
             val actual = currentVariantHeight
             val tierNow = if (actual > 0) actual else stallCapHeight
@@ -3878,6 +3878,15 @@ class PlayerActivity : AppCompatActivity() {
          * 或 currentPosition 一直不前进，即判定「画面冻住」。
          * 3s 足够长，不会把拖动/缓冲/切集的正常空窗算进来。
          */
+        /**
+         * 画面停滞时是否自动降一档画质。
+         *
+         * 默认 false：降档只是回避，不对症——用户要的是「卡完画面追回来」，不是「变糊」。
+         * 现在一律先做原地 seek 重同步（把画面拉到音频时钟位置），同一集反复停滞才重建
+         * 播放器（保持原档位）。需要旧行为时改 true 即可。
+         */
+        private const val STALL_AUTO_DOWNGRADE = false
+
         /**
          * 画面停滞判定阈值。
          *
