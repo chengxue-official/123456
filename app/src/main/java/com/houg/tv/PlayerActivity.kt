@@ -3261,15 +3261,18 @@ class PlayerActivity : AppCompatActivity() {
             stallSamplePos = pos
             stallSampleAt = now
         }
-        if (now - lastStallRecoverAt < STALL_RECOVER_GAP_MS) return
 
         val frameFrozenMs = now - lastVideoFrameAt
         val posFrozenMs = now - stallSampleAt
         if (frameFrozenMs < VIDEO_STALL_MS && posFrozenMs < VIDEO_STALL_MS) return
+        val hard = posFrozenMs >= VIDEO_STALL_MS
+        // 仅画面停滞的处置是「降一档重建」，代价小、间隔短一点收敛更快；
+        // 整体冻结要清缓存+重建取流，保持长间隔避免连环重建。
+        val recoverGap = if (hard) STALL_RECOVER_GAP_MS else STALL_FRAME_GAP_MS
+        if (now - lastStallRecoverAt < recoverGap) return
 
         lastStallRecoverAt = now
         stallRecoveries++
-        val hard = posFrozenMs >= VIDEO_STALL_MS
         AppLog.d("PlayerActivity", "画面停滞 帧停=" + frameFrozenMs + "ms 进度停=" + posFrozenMs
                 + "ms 位置=" + pos + " 解码器=" + lastDecoderName + " 硬解=" + !softDecoding
                 + " 类型=" + (if (hard) "整体冻结" else "仅画面")
@@ -3795,6 +3798,14 @@ class PlayerActivity : AppCompatActivity() {
 
         /** 两次停滞自救的最小间隔：避免 500ms 轮询在没救回来时连环触发。 */
         private const val STALL_RECOVER_GAP_MS = 15_000L
+
+        /**
+         * 「仅画面」停滞两次降档之间的最小间隔（ms）。
+         *
+         * 仅画面停滞的处置是降一档 + 重建（代价小），间隔太大会让 1080P 喂不上帧的
+         * 弱解码器设备每 15s 才降一档，用户要卡着等好几轮；6s 足够覆盖一次重建+首帧。
+         */
+        private const val STALL_FRAME_GAP_MS = 6_000L
 
         /** 每集最多「弃缓存 + 重建播放器」的次数，超出就停止自救（源本身坏掉时防无限闪屏）。 */
         private const val STALL_MAX_REBUILDS = 2
