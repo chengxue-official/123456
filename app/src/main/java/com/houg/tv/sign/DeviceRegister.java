@@ -181,10 +181,15 @@ public final class DeviceRegister {
         return r == null ? "" : r.cookieHeader;
     }
 
-    /** 注册时服务端下发的 device_token；未注册或注册响应未带时为空串。 */
-    public static String deviceToken() {
-        Result r = load();
-        return r == null ? "" : r.deviceToken;
+    /** 注册时使用的 cdid（客户端设备 UUID）。HGTV 的业务 query 白名单里有它，必须随请求带上。 */
+    public static String cdid() {
+        Context ctx = appContext;
+        if (ctx == null) return "";
+        try {
+            return prefs().getString("cdid", "");
+        } catch (Throwable t) {
+            return "";
+        }
     }
 
     public static String lastError() {

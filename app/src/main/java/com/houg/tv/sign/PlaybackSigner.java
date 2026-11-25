@@ -37,7 +37,7 @@ public final class PlaybackSigner {
         m.put("iid", "1905892595382586");
         m.put("device_id", "1905892595378490");
         m.put("ac", "wifi");
-        m.put("channel", "update_64");
+        m.put("channel", "69310258a");
         m.put("aid", "8662");
         m.put("app_name", "novelread");
         m.put("version_code", "74332");

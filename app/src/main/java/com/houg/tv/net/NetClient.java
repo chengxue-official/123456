@@ -7,7 +7,6 @@ import android.util.Base64;
 
 import com.houg.tv.sign.DeviceRegister;
 import com.houg.tv.sign.HgCrypto;
-import com.houg.tv.sign.HgtvDexSigner;
 import com.houg.tv.sign.HostPool;
 import com.houg.tv.sign.MediaCrypto;
 import com.houg.tv.sign.PlaybackSigner;
@@ -2036,25 +2035,25 @@ public final class NetClient {
     /** v5 播放取流端点（2026-11-24 上游迁移后的可用地址，仅 a 域名）。 */
     private static final String V5_PLAYER_URL = PlaybackSignerV5.base();
 
-    /** v5 取流 body：与 HGTV 1.3.9.3 的 m0() 完全一致（dr_scene 在顶层、bucket key "1004"）。 */
+    /** v5 取流 body：HGTV 1.3.9.3 model-direct（/novel/player/video_model/v1/）同款。 */
     private static byte[] buildV5Body(String vid) throws Exception {
         JSONObject bizParam = new JSONObject();
         bizParam.put("detail_page_version", 0);
         bizParam.put("device_level", 4);
         bizParam.put("disable_digg_stat", false);
         bizParam.put("disable_video_relate_book", false);
+        bizParam.put("from_video_id", "");
         bizParam.put("need_all_video_definition", true);
         bizParam.put("need_mp4_align", false);
         bizParam.put("use_os_player", false);
         bizParam.put("use_server_dns", true);
         bizParam.put("use_server_dns_scene", "cold_start_stage");
+        bizParam.put("source", 4);
         bizParam.put("video_platform", 1024);
-        JSONObject idMap = new JSONObject();
-        idMap.put("1004", new JSONArray().put(vid));
         JSONObject body = new JSONObject();
+        body.put("video_id", vid);
+        body.put("content_type", 1004);
         body.put("biz_param", bizParam);
-        body.put("dr_scene", "player");
-        body.put("mixed_video_id_map", idMap);
         return body.toString().getBytes(UTF8);
     }
 
@@ -2097,22 +2096,34 @@ public final class NetClient {
         String iid = DeviceRegister.installId();
         if (dev != null && !dev.trim().isEmpty()) profile.put("device_id", dev.trim());
         if (iid != null && !iid.trim().isEmpty()) profile.put("iid", iid.trim());
+        // HGTV 的业务 query 白名单包含 cdid（客户端设备 UUID）：注册时上报、
+        // 之后每个业务请求都带，缺它会被网关判成「不完整设备」直接 200 空体。
+        // HGTV 1.3.9.3 的业务 query 白名单包含 cdid（客户端设备 UUID）：注册时上报、
+        // 之后每个业务请求都带。
+        String cdid = DeviceRegister.cdid();
+        if (!cdid.isEmpty()) profile.put("cdid", cdid);
+        // 机型档案改用本机真实 Build 值（与 HGTV 的 device-profile 同源）：
+        // 线上 11-24 前用假 Redmi 档案能过，新网关按「设备指纹真实性」判定，
+        // 假档案会拿到 200 空 body（模拟器对照实验：HGTV 真机档案可播）。
+        profile.put("device_type", android.os.Build.MODEL);
+        profile.put("device_brand", android.os.Build.BRAND);
+        profile.put("os_version", android.os.Build.VERSION.RELEASE);
+        profile.put("os_api", String.valueOf(android.os.Build.VERSION.SDK_INT));
+        profile.put("rom_version", android.os.Build.DISPLAY + " release-keys");
+        try {
+            android.util.DisplayMetrics dm = android.content.res.Resources.getSystem().getDisplayMetrics();
+            int w = dm.widthPixels, h = dm.heightPixels;
+            profile.put("resolution", Math.max(w, h) + "*" + Math.min(w, h));
+            profile.put("dpi", String.valueOf(dm.densityDpi));
+        } catch (Throwable ignore) {
+        }
 
         String finalUrl = url;
         LinkedHashMap<String, String> headers;
         byte[] body = gzipPayload;
-        HgtvDexSigner.Signed signed = HgtvDexSigner.sign(url, profile, gzipPayload,
-                DeviceRegister.deviceToken());
-        if (signed != null) {
-            finalUrl = signed.url;
-            headers = signed.headers;
-            body = signed.body;
-            AppLog.INSTANCE.d(TAG, "PLAYBACK-V5(HGTV-dex) 头数=" + headers.size());
-        } else {
-            PlaybackSignerV5.Request req = PlaybackSignerV5.sign(url, profile, gzipPayload);
-            finalUrl = req.url;
-            headers = req.headers;
-        }
+        PlaybackSignerV5.Request req = PlaybackSignerV5.sign(url, profile, gzipPayload);
+        finalUrl = req.url;
+        headers = req.headers;
         Request.Builder rb = new Request.Builder().url(finalUrl);
         for (Map.Entry<String, String> e : headers.entrySet()) {
             rb.header(e.getKey(), e.getValue());

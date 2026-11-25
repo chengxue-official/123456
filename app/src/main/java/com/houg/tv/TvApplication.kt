@@ -61,12 +61,5 @@ class TvApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         App.init(this)
-        // 后台预热 HGTV dex 签名栈：解压 + odex 有 IO/编译开销，别压在起播链路上
-        Thread {
-            try {
-                com.houg.tv.sign.HgtvDexSigner.warmUp(this)
-            } catch (_: Throwable) {
-            }
-        }.start()
     }
 }

@@ -40,7 +40,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class PlaybackSignerV5 {
 
     private static final String BASE =
-            "https://api5-normal-sinfonlinea.fqnovel.com/novel/player/multi_video_model/preload/v1";
+            "https://api5-normal-sinfonlinea.fqnovel.com/novel/player/video_model/v1/";
 
     /** UA 模板（HGTV 1.3.9.3 的 b4.d 同款：带 Cronet/TTNet 后缀，%VC%/%OS%/%MODEL% 按档案填充）。 */
     private static final String UA_TEMPLATE =
