@@ -40,12 +40,26 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class PlaybackSignerV5 {
 
     private static final String BASE =
-            "https://api5-normal-sinfonlinea.fqnovel.com/novel/player/multi_video_model/player/v1";
+            "https://api5-normal-sinfonlinea.fqnovel.com/novel/player/multi_video_model/preload/v1";
 
-    /** v5 播放器 UA（来自上游实测样本，机型换成 vivo 旗舰）。 */
-    public static final String UA =
-            "com.phoenix.read/73932 (Linux; U; Android 12; zh_CN_#Hans; PGT-AN10; "
-                    + "Build/V417IR;tt-ok/3.12.13.20)";
+    /** UA 模板（HGTV 1.3.9.3 的 b4.d 同款：带 Cronet/TTNet 后缀，%VC%/%OS%/%MODEL% 按档案填充）。 */
+    private static final String UA_TEMPLATE =
+            "com.phoenix.read/%VC% (Linux; U; Android %OS%; zh_CN; %MODEL%; "
+                    + "Build/BP2A.250605.031.A3; Cronet/TTNetVersion:8d40f833 2026-03-03 "
+                    + "QuicVersion:21ac1950 2025-11-18)";
+
+    /** v5 播放器 UA：按请求档案生成，与注册/其它业务请求保持同一台「设备」。 */
+    public static String ua(Map<String, String> profile) {
+        return UA_TEMPLATE
+                .replace("%VC%", str(profile, "version_code", "74332"))
+                .replace("%OS%", str(profile, "os_version", "16"))
+                .replace("%MODEL%", str(profile, "device_type", "25053RT47C"));
+    }
+
+    private static String str(Map<String, String> m, String key, String def) {
+        String v = m == null ? null : m.get(key);
+        return v == null || v.trim().isEmpty() ? def : v.trim();
+    }
 
     /** medusa 协议魔数与 license（v5 新值；license 与 v1 相同）。 */
     private static final byte[] MAGIC = hex("2d4b4fca49750d433fb5ae2c226dcc56");
@@ -730,14 +744,16 @@ public final class PlaybackSignerV5 {
      * 无 field 16/19、field 24 换 cmr 固定文案、env 换 SDK v04.10.03.04-bugfix。
      */
     public static String medusa(String url, byte[] body, int khronos, String deviceId,
-                                String versionName, String deviceType) {
-        return medusa(url, body, khronos, deviceId, versionName, deviceType,
-                System.currentTimeMillis());
+                                String versionName, String deviceType, String channel,
+                                String osVersion, String brand) {
+        return medusa(url, body, khronos, deviceId, versionName, deviceType, channel,
+                osVersion, brand, System.currentTimeMillis());
     }
 
     /** 对拍重载：started 显式传入（Python 侧把 time.time() 打桩成同一值）。 */
     static String medusa(String url, byte[] body, int khronos, String deviceId,
-                         String versionName, String deviceType, long started) {
+                         String versionName, String deviceType, String channel,
+                         String osVersion, String brand, long started) {
         byte[] bodyMd5 = body == null ? new byte[16] : md5(body);
         String query = url.contains("?") ? url.substring(url.indexOf('?') + 1) : "";
         byte[] queryBytes = query.getBytes(StandardCharsets.UTF_8);
@@ -749,16 +765,19 @@ public final class PlaybackSignerV5 {
             nonceBytes[i] = (byte) (randomSource.next32() & 255);
         }
         String nonce = b64Url(nonceBytes);
+        String chan = channel == null || channel.isEmpty() ? "update_64" : channel;
+        String os = osVersion == null || osVersion.isEmpty() ? "16" : osVersion;
+        String brd = brand == null || brand.isEmpty() ? "Redmi" : brand;
         byte[] deviceInfo = proto(new Object[][]{
                 {1, 1L, 0}, {2, 2L, 0},
                 {3, "8662", 1}, {4, deviceId, 1}, {5, nonce, 1}, {6, "!noperm!", 1},
                 {12, "Asia/Shanghai,8", 1}, {13, "zh_CN", 1},
-                {22, "12", 1}, {25, started, 0},
-                {30, deviceType, 1}, {31, "HONOR", 1},
-                {32, deviceType, 1}, {34, "HONOR", 1}});
+                {22, os, 1}, {25, started, 0},
+                {30, deviceType, 1}, {31, brd, 1},
+                {32, deviceType, 1}, {34, brd, 1}});
         byte[] env = proto(new Object[][]{
                 {6, "v04.10.03.04-bugfix", 1},
-                {8, "vivo_8662_64", 1},
+                {8, chan, 1},
                 {12, deviceInfo, 3},
                 {14, version, 1}});
         byte[] message = proto(new Object[][]{
@@ -877,6 +896,7 @@ public final class PlaybackSignerV5 {
         LinkedHashMap<String, String> full = new LinkedHashMap<>(values);
         // v5 的 query 只有 _rticket 一个动态参数（x-khronos 走请求头，不带 ts）
         full.put("_rticket", String.valueOf(now));
+        String traceId = traceId();
         for (int offset = 0; offset <= 1023; offset++) {
             long ticket = now + offset;
             full.put("_rticket", String.valueOf(ticket));
@@ -885,18 +905,101 @@ public final class PlaybackSignerV5 {
                 continue;
             }
             String url = base + "?" + query;
+            int randomValue = randomSource.next32() & 0xFFFF;
             LinkedHashMap<String, String> headers = new LinkedHashMap<>();
+            headers.put("User-Agent", ua(values));
+            headers.put("Accept", "application/json; charset=utf-8,application/x-protobuf");
+            headers.put("x-ss-req-ticket", String.valueOf(ticket));
+            headers.put("sdk-version", "2");
+            headers.put("passport-sdk-version", "5051452");
+            headers.put("lc", "101");
+            headers.put("x-vc-bdturing-sdk-version", "4.0.3.cn");
+            headers.put("x-xs-from-web", "0");
+            headers.put("x-ss-dp", "8662");
+            headers.put("x-tt-store-region", "cn-gd");
+            headers.put("x-tt-store-region-src", "did");
             headers.put("x-khronos", String.valueOf(ts));
+            // v5（HGTV 1.3.9.3 L3.h 分支）：ladon/argus 退化为 4 字节占位，
+            // 真正的校验在 gorgon/helios/medusa 三者上。
+            headers.put("x-ladon", B64.encodeToString(random4()));
+            headers.put("x-argus", B64.encodeToString(le32(ts)));
+            headers.put("x-gorgon", gorgon(query, body, ts, randomValue));
             headers.put("x-helios", helios(ts));
             headers.put("x-medusa", medusa(url, body, ts,
-                    full.get("device_id"), full.get("version_name"), "PGT-AN10"));
+                    full.get("device_id"), full.get("version_name"), full.get("device_type"),
+                    full.get("channel"), full.get("os_version"), full.get("device_brand")));
             if (body != null && body.length > 0) {
                 headers.put("Content-Type", "application/json; charset=utf-8");
+                headers.put("Content-Encoding", "gzip");
+                headers.put("x-reading-request",
+                        ticket + "-" + ((randomSource.next32() & 0xFFFFFFFFL)));
                 headers.put("x-ss-stub", hexUpper(md5(body)));
+                headers.put("x-tt-trace-id", traceId);
             }
             return new Request(url, headers);
         }
         throw new IllegalStateException("无法生成 v5 请求签名");
+    }
+
+    private static byte[] random4() {
+        byte[] out = new byte[4];
+        for (int i = 0; i < 4; i++) {
+            out[i] = (byte) (randomSource.next32() & 255);
+        }
+        return out;
+    }
+
+    /** b4.b() 同款 trace id：00-<uuid 去横线>-<前 16 位>-01。 */
+    private static String traceId() {
+        String u = java.util.UUID.randomUUID().toString().replace("-", "");
+        return "00-" + u + "-" + u.substring(0, 16) + "-01";
+    }
+
+    private static byte[] be32(int v) {
+        return new byte[]{
+                (byte) ((v >>> 24) & 255), (byte) ((v >>> 16) & 255),
+                (byte) ((v >>> 8) & 255), (byte) (v & 255)
+        };
+    }
+
+    /** x-gorgon（HGTV L3.e 同款，8404 前缀，v5 与 v1 共用）。 */
+    static String gorgon(String query, byte[] body, int ts, int randomValue) {
+        byte[] q4 = new byte[4];
+        System.arraycopy(md5(query.getBytes(StandardCharsets.UTF_8)), 0, q4, 0, 4);
+        byte[] b4 = new byte[4];
+        if (body != null) {
+            System.arraycopy(md5(body), 0, b4, 0, 4);
+        }
+        byte[] input = concat(q4, b4, new byte[4], le32(67503104), be32(ts));
+        int[] key = {0x4a, 0x40, 0x16, (randomValue >> 8) & 255, 0x47, 0x6c, 1, randomValue & 255};
+        int[] s = new int[256];
+        for (int i = 0; i < 256; i++) {
+            s[i] = i;
+        }
+        int j = 0;
+        for (int i = 0; i < 256; i++) {
+            j = (j + s[i] + key[i % 8]) & 255;
+            int t = s[i];
+            s[i] = s[j];
+            s[j] = t;
+        }
+        byte[] out = new byte[input.length];
+        j = 0;
+        for (int n = 0; n < input.length; n++) {
+            int i = n + 1;
+            j += s[i & 255];
+            int y = s[j & 255];
+            s[i & 255] = y;
+            out[n] = (byte) (u(input[n]) ^ s[(y + y) & 255]);
+        }
+        for (int i = 0; i < out.length; i++) {
+            int value = ((u(out[i]) >>> 4) | (u(out[i]) << 4)) & 255;
+            int next = u(out[(i + 1 < out.length) ? i + 1 : 0]);
+            int reversed = Integer.reverse((next ^ value) & 255) >>> 24;
+            out[i] = (byte) (~(reversed ^ 20));
+        }
+        return hexUpper(concat(hex("8404"),
+                new byte[]{(byte) randomValue, (byte) (randomValue >> 8), 0x40, 1}, out));
     }
 
     public static String base() {

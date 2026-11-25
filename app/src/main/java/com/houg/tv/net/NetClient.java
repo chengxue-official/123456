@@ -2035,23 +2035,24 @@ public final class NetClient {
     /** v5 播放取流端点（2026-11-24 上游迁移后的可用地址，仅 a 域名）。 */
     private static final String V5_PLAYER_URL = PlaybackSignerV5.base();
 
-    /** v5 取流 body：dr_scene=player、bucket key 用 "1004"（与 v1 的 "1" 不同）。 */
+    /** v5 取流 body：与 HGTV 1.3.9.3 的 m0() 完全一致（dr_scene 在顶层、bucket key "1004"）。 */
     private static byte[] buildV5Body(String vid) throws Exception {
         JSONObject bizParam = new JSONObject();
         bizParam.put("detail_page_version", 0);
-        bizParam.put("device_level", 1);
+        bizParam.put("device_level", 4);
         bizParam.put("disable_digg_stat", false);
-        bizParam.put("disable_video_relate_book", true);
-        bizParam.put("dr_scene", "player");
+        bizParam.put("disable_video_relate_book", false);
         bizParam.put("need_all_video_definition", true);
         bizParam.put("need_mp4_align", false);
         bizParam.put("use_os_player", false);
-        bizParam.put("use_server_dns", false);
+        bizParam.put("use_server_dns", true);
+        bizParam.put("use_server_dns_scene", "cold_start_stage");
         bizParam.put("video_platform", 1024);
         JSONObject idMap = new JSONObject();
         idMap.put("1004", new JSONArray().put(vid));
         JSONObject body = new JSONObject();
         body.put("biz_param", bizParam);
+        body.put("dr_scene", "player");
         body.put("mixed_video_id_map", idMap);
         return body.toString().getBytes(UTF8);
     }
@@ -2086,47 +2087,19 @@ public final class NetClient {
      * x-khronos/x-helios/x-medusa）+ 设备注册 Cookie。返回 null 表示「200 + 空 body」。
      */
     private JSONObject playbackPostV5(String url, byte[] gzipPayload) throws Exception {
-        // v5 的 query 参数集照抄上游实测样本（vivo PGT-AN10 / channel vivo_8662_64），
-        // medusa 的 env 里也带同一组 channel/version，两边必须一致。
+        // query / UA / medusa env 必须与「本机已注册身份」是同一台设备：
+        // 之前照抄上游样本的 vivo PGT-AN10 假档案配 update_64 真 device_id，
+        // 实测六台线上设备恒 200 空体（机型档案与注册身份互斥，被判无效请求）。
+        Map<String, String> profile = PlaybackSigner.defaultDeviceProfile();
         String dev = DeviceRegister.deviceId();
         String iid = DeviceRegister.installId();
-        Map<String, String> profile = new LinkedHashMap<>();
-        profile.put("aid", "8662");
-        profile.put("app_name", "novelread");
-        profile.put("version_code", "74332");
-        profile.put("version_name", "7.4.3.32");
-        profile.put("channel", "vivo_8662_64");
-        profile.put("device_platform", "android");
-        profile.put("device_type", "PGT-AN10");
-        profile.put("os_version", "12");
-        profile.put("update_version_code", "74332");
-        profile.put("device_id", dev == null ? "" : dev.trim());
-        profile.put("iid", iid == null ? "" : iid.trim());
-        profile.put("ac", "wifi");
-        profile.put("os", "android");
-        profile.put("ssmix", "a");
-        profile.put("device_brand", "vivo");
-        profile.put("language", "zh");
-        profile.put("os_api", "31");
-        profile.put("manifest_version_code", "74332");
-        profile.put("resolution", "1080*2400");
-        profile.put("dpi", "480");
-        profile.put("host_abi", "arm64-v8a");
-        profile.put("dragon_device_type", "phone");
-        profile.put("compliance_status", "0");
-        profile.put("need_personal_recommend", "1");
-        profile.put("player_so_load", "1");
-        profile.put("is_android_pad_screen", "0");
+        if (dev != null && !dev.trim().isEmpty()) profile.put("device_id", dev.trim());
+        if (iid != null && !iid.trim().isEmpty()) profile.put("iid", iid.trim());
         PlaybackSignerV5.Request req = PlaybackSignerV5.sign(url, profile, gzipPayload);
         Request.Builder rb = new Request.Builder().url(req.url);
         for (Map.Entry<String, String> e : req.headers.entrySet()) {
             rb.header(e.getKey(), e.getValue());
         }
-        rb.header("User-Agent", PlaybackSignerV5.UA);
-        rb.header("Content-Encoding", "gzip");
-        rb.header("Accept", "application/json");
-        rb.header("sdk-version", "2");
-        rb.header("x-tt-request-tag", "t=0;n=0");
         String cookie = DeviceRegister.cookieHeader();
         if (!cookie.isEmpty()) {
             rb.header("Cookie", cookie);
