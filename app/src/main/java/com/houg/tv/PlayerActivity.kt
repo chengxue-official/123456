@@ -679,6 +679,22 @@ class PlayerActivity : AppCompatActivity() {
      * 帧率/解码诊断：记录实际启用的解码器与会话内丢帧。
      * 「感觉帧数不高」时先看这两条——解码器是硬解还是 c2.android 软解、有没有持续丢帧。
      */
+    /**
+     * 逐帧心跳（可靠版）。
+     *
+     * <p>为什么不用 AnalyticsListener.onVideoFrameProcessingOffset 当心跳：模拟器/部分
+     * 厂商解码器根本不回调它（2026-11-25 实测：日志报「帧停 5.1s」，同时连拍截图画面
+     * 每帧都在变），导致看门狗误判「画面停滞」，然后自己 seek/重建——用户看到的
+     * 「画面卡住，正在重新连接」其实是自救动作造成的。
+     *
+     * <p>VideoFrameMetadataListener 由 MediaCodecVideoRenderer 在**每一帧即将上屏时**
+     * 调用，是真正可靠的逐帧信号。
+     */
+    private val frameHeartbeat = androidx.media3.exoplayer.video.VideoFrameMetadataListener {
+            _, _, _, _ ->
+        lastVideoFrameAt = System.currentTimeMillis()
+    }
+
     private val frameAnalytics = object : AnalyticsListener {
         override fun onVideoDecoderInitialized(
             eventTime: AnalyticsListener.EventTime,
@@ -928,6 +944,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         player = buildPlayer()
         player!!.setVideoSurfaceView(surfaceView)
+        player!!.setVideoFrameMetadataListener(frameHeartbeat)
         player!!.setAudioAttributes(AudioAttributes.DEFAULT, /*handleAudioFocus=*/true)
         // ② 播放期间持有 CPU + Wi-Fi 唤醒锁：即便被系统熄屏/待机，缓冲与网络
         //    请求也不会因 CPU 挂起而中断，回前台可无缝续播（配合 FLAG_KEEP_SCREEN_ON，
@@ -2163,6 +2180,7 @@ class PlayerActivity : AppCompatActivity() {
         try { old.release() } catch (_: Exception) {}
         player = buildPlayer()
         player!!.setVideoSurfaceView(surfaceView)
+        player!!.setVideoFrameMetadataListener(frameHeartbeat)
         player!!.setAudioAttributes(AudioAttributes.DEFAULT, /*handleAudioFocus=*/true)
         try { player!!.setWakeMode(C.WAKE_MODE_NETWORK) } catch (_: Exception) {}
         player!!.addListener(playerListener)
