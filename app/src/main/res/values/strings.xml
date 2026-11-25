@@ -108,6 +108,7 @@
     <string name="ep_finished_auto_off">已播完第 %1$s 集，自动连播已关闭</string>
     <!-- 刷短剧（feed）模式 -->
     <string name="feed_switch_next">换一部</string>
+    <string name="feed_switch_prev">回到上一部</string>
     <string name="feed_loading">正在为你挑剧…</string>
     <string name="feed_load_failed">推荐流加载失败，按确认键重试</string>
     <string name="feed_empty">暂时没有可看的短剧</string>

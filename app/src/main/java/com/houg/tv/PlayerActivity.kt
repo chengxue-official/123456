@@ -65,7 +65,7 @@ import kotlin.math.abs
  * 交互（遥控器优先，无底部导航栏）：
  *  - OK 键           ：播放 / 暂停
  *  - 左右键          ：快退 / 快进 15 秒；长按按键重复事件会叠加步长（15s→30s→45s…）
- *  - 上 / 下键       ：上一集 / 下一集
+ *  - 上 / 下键       ：上一集 / 下一集；刷短剧模式为上一部 / 下一部（换剧）
  *  - 菜单键          ：调出菜单（画面填充、弹幕开关、倍速、退出）
  *  - 返回键          ：手机单击退出；TV 双击退出（首次提示，2 秒内再按一次退出播放）
  *  - 任意按键        ：短暂显示顶部集信息与底部进度（自动隐藏，不抢焦点）
@@ -2689,7 +2689,16 @@ class PlayerActivity : AppCompatActivity() {
                 val sorted = detail.episodes.sortedBy { it.index }
                 vidList = sorted.map { it.vid }
                 epList = sorted.map { it.index }
-                currentPos = if (startEpPos < 0) vidList.size - 1
+                // 起播集：这部剧上次看到一半（该集有真实进度）就续那一集——
+                // 刷剧时来回上下换剧不会把观看位置弄丢；整集看完后进度会被清空
+                // （见 markEpisodeCompleted），此时视为没看过，从第 1 集重新刷。
+                val lastEp = try { App.watchHistory.lastEpisode(detail.seriesId) } catch (_: Exception) { 0 }
+                val resumePos = if (lastEp > 0) epList.indexOf(lastEp) else -1
+                val resumeHalf = resumePos >= 0 && try {
+                    App.watchHistory.positionOf(detail.seriesId, lastEp) > 0
+                } catch (_: Exception) { false }
+                currentPos = if (resumeHalf) resumePos
+                             else if (startEpPos < 0) vidList.size - 1
                              else startEpPos.coerceIn(0, vidList.size - 1)
                 loadedPos = -1
                 feedEmptyStreak = 0
@@ -2766,6 +2775,19 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     /**
+     * 手动换剧（遥控器上下键 / 手机上下滑）。
+     *
+     * @param dir -1 上一部，+1 下一部；起播集统一按观看历史决定（见 [loadFeedSeries]：
+     *            看过半集就续那一集，没看过从第 1 集开始）。
+     */
+    private fun feedSwitch(dir: Int) {
+        if (feedOpening) return
+        recordHistory(force = true)
+        toast(getString(if (dir > 0) R.string.feed_switch_next else R.string.feed_switch_prev))
+        loadFeedSeries(nextFeedIndex(dir), 0)
+    }
+
+    /**
      * 本部剧播完（自动连播）→ 接下一部第 1 集。
      * 普通模式播完是「停住/提示」，feed 的核心就是永远有下一步。
      */
@@ -2807,8 +2829,12 @@ class PlayerActivity : AppCompatActivity() {
                     epPickerRoot.visibility != View.VISIBLE &&
                     abs(ev.y - swipeDownY) >= dp(SWIPE_TRIGGER_DP)
                 ) {
-                    // 上滑（dy<0）→ 下一集；下滑 → 上一集
-                    switchEpisode(if (ev.y < swipeDownY) currentPos + 1 else currentPos - 1)
+                    // 上滑（dy<0）→ 下一部/下一集；下滑 → 上一部/上一集（feed 换剧）
+                    if (feedMode()) {
+                        feedSwitch(if (ev.y < swipeDownY) 1 else -1)
+                    } else {
+                        switchEpisode(if (ev.y < swipeDownY) currentPos + 1 else currentPos - 1)
+                    }
                     return true
                 }
             }
@@ -3439,15 +3465,16 @@ class PlayerActivity : AppCompatActivity() {
                 quickSeek(1, event.repeatCount)
                 return true
             }
-            // 上下键：上一集 / 下一集；刷短剧模式下跨过集边界 = 跨剧
-            // （上：第一部时退回上一部最后一集；下：最后一集时进下一部第 1 集）
+            // 上下键：普通模式 = 上一集 / 下一集；刷短剧模式 = 上一部 / 下一部（换剧）。
+            // feed 内同剧的集切换交给自动连播与选集弹窗——进 feed 时的提示语
+            // （「↑↓ 上下换剧」）与字段注释都是这个语义，旧实现却先在本剧内换集，
+            // 用户按半天才能跳到下一部，已按反馈修正。
             KeyEvent.KEYCODE_DPAD_UP,
             KeyEvent.KEYCODE_CHANNEL_UP -> {
-                if (currentPos > 0) {
+                if (feedMode()) {
+                    feedSwitch(-1)
+                } else if (currentPos > 0) {
                     switchEpisode(currentPos - 1)
-                } else if (feedMode()) {
-                    recordHistory(force = true)
-                    loadFeedSeries(nextFeedIndex(-1), -1)
                 } else {
                     toast(getString(R.string.first_episode))
                 }
@@ -3455,11 +3482,10 @@ class PlayerActivity : AppCompatActivity() {
             }
             KeyEvent.KEYCODE_DPAD_DOWN,
             KeyEvent.KEYCODE_CHANNEL_DOWN -> {
-                if (currentPos + 1 < vidList.size) {
+                if (feedMode()) {
+                    feedSwitch(1)
+                } else if (currentPos + 1 < vidList.size) {
                     switchEpisode(currentPos + 1)
-                } else if (feedMode()) {
-                    recordHistory(force = true)
-                    feedAutoAdvance()
                 } else {
                     toast(getString(R.string.last_episode))
                 }
