@@ -181,6 +181,12 @@ public final class DeviceRegister {
         return r == null ? "" : r.cookieHeader;
     }
 
+    /** 注册时服务端下发的 device_token；未注册或注册响应未带时为空串。 */
+    public static String deviceToken() {
+        Result r = load();
+        return r == null ? "" : r.deviceToken;
+    }
+
     public static String lastError() {
         return lastError;
     }

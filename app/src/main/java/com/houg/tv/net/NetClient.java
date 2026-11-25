@@ -7,6 +7,7 @@ import android.util.Base64;
 
 import com.houg.tv.sign.DeviceRegister;
 import com.houg.tv.sign.HgCrypto;
+import com.houg.tv.sign.HgtvDexSigner;
 import com.houg.tv.sign.HostPool;
 import com.houg.tv.sign.MediaCrypto;
 import com.houg.tv.sign.PlaybackSigner;
@@ -2087,25 +2088,41 @@ public final class NetClient {
      * x-khronos/x-helios/x-medusa）+ 设备注册 Cookie。返回 null 表示「200 + 空 body」。
      */
     private JSONObject playbackPostV5(String url, byte[] gzipPayload) throws Exception {
-        // query / UA / medusa env 必须与「本机已注册身份」是同一台设备：
-        // 之前照抄上游样本的 vivo PGT-AN10 假档案配 update_64 真 device_id，
-        // 实测六台线上设备恒 200 空体（机型档案与注册身份互斥，被判无效请求）。
-        Map<String, String> profile = PlaybackSigner.defaultDeviceProfile();
+        // query 档案与「本机已注册身份」同源（update_64 / 25053RT47C / os 16）。
+        // 优先走 HGTV 1.3.9.3 dex 的原生签名栈（medusa 状态机/field 16/21/22/24
+        // 自研无法完整还原，线上 2.2.2 实测自研版仍 200 空 body）；dex 加载失败
+        // （老机型 odex 出错）才回退自研 PlaybackSignerV5。
+        LinkedHashMap<String, String> profile = PlaybackSigner.defaultDeviceProfile();
         String dev = DeviceRegister.deviceId();
         String iid = DeviceRegister.installId();
         if (dev != null && !dev.trim().isEmpty()) profile.put("device_id", dev.trim());
         if (iid != null && !iid.trim().isEmpty()) profile.put("iid", iid.trim());
-        PlaybackSignerV5.Request req = PlaybackSignerV5.sign(url, profile, gzipPayload);
-        Request.Builder rb = new Request.Builder().url(req.url);
-        for (Map.Entry<String, String> e : req.headers.entrySet()) {
+
+        String finalUrl = url;
+        LinkedHashMap<String, String> headers;
+        byte[] body = gzipPayload;
+        HgtvDexSigner.Signed signed = HgtvDexSigner.sign(url, profile, gzipPayload,
+                DeviceRegister.deviceToken());
+        if (signed != null) {
+            finalUrl = signed.url;
+            headers = signed.headers;
+            body = signed.body;
+            AppLog.INSTANCE.d(TAG, "PLAYBACK-V5(HGTV-dex) 头数=" + headers.size());
+        } else {
+            PlaybackSignerV5.Request req = PlaybackSignerV5.sign(url, profile, gzipPayload);
+            finalUrl = req.url;
+            headers = req.headers;
+        }
+        Request.Builder rb = new Request.Builder().url(finalUrl);
+        for (Map.Entry<String, String> e : headers.entrySet()) {
             rb.header(e.getKey(), e.getValue());
         }
         String cookie = DeviceRegister.cookieHeader();
         if (!cookie.isEmpty()) {
             rb.header("Cookie", cookie);
         }
-        rb.post(RequestBody.create(JSON_TYPE, gzipPayload));
-        AppLog.INSTANCE.d(TAG, "PLAYBACK-V5 POST " + req.url);
+        rb.post(RequestBody.create(JSON_TYPE, body));
+        AppLog.INSTANCE.d(TAG, "PLAYBACK-V5 POST " + finalUrl);
         try (Response resp = client.newCall(rb.build()).execute()) {
             int code = resp.code();
             byte[] bytes = resp.body() == null ? new byte[0] : resp.body().bytes();
