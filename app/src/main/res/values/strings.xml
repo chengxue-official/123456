@@ -147,6 +147,10 @@
     <string name="decoder_hevc_soft_oom">本机无法解码该清晰度的片源（H.265/HEVC 高清档），已尝试其他方式仍失败；建议稍后再试或反馈给开发者</string>
     <string name="play_error_no_video_track">该集没有可解码的视频轨（只有声音），可在菜单里切软解或换一集试试</string>
     <string name="menu_exit">退出播放</string>
+    <!-- 播放页菜单：收藏 / 详情（刷短剧换剧后的配套入口） -->
+    <string name="menu_favorite_add">收藏此剧</string>
+    <string name="menu_favorite_remove">取消收藏</string>
+    <string name="menu_series_detail">剧集详情</string>
     <string name="press_again_to_exit">再按一次返回键退出播放</string>
 
     <!-- 选集弹窗 -->

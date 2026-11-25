@@ -1,6 +1,7 @@
 package com.houg.tv
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.net.Uri
@@ -271,6 +272,8 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var menuSpeed: TextView
     private lateinit var menuEpisodes: TextView
     private lateinit var menuDecoder: TextView
+    private lateinit var menuFavorite: TextView
+    private lateinit var menuDetail: TextView
     private lateinit var menuExit: TextView
     private lateinit var btnMenu: TextView
     /** 顶栏右上角的菜单入口（TV：遥控器无菜单键时的替代入口）。 */
@@ -880,6 +883,8 @@ class PlayerActivity : AppCompatActivity() {
         menuSpeed = findViewById(R.id.menu_speed)
         menuEpisodes = findViewById(R.id.menu_episodes)
         menuDecoder = findViewById(R.id.menu_decoder)
+        menuFavorite = findViewById(R.id.menu_favorite)
+        menuDetail = findViewById(R.id.menu_detail)
         menuExit = findViewById(R.id.menu_exit)
         btnMenu = findViewById(R.id.btn_menu)
         btnMenuTop = findViewById(R.id.btn_menu_top)
@@ -1003,6 +1008,8 @@ class PlayerActivity : AppCompatActivity() {
         menuSpeed.setOnClickListener { cycleSpeed() }
         menuEpisodes.setOnClickListener { openEpisodePicker() }
         menuDecoder.setOnClickListener { cycleDecoder() }
+        menuFavorite.setOnClickListener { toggleFavoriteFromMenu() }
+        menuDetail.setOnClickListener { openSeriesDetail() }
         menuExit.setOnClickListener { showExitDialog() }
 
         // 手机没有菜单键，用底部控制栏的「菜单」按钮代替（TV 仍走 KEYCODE_MENU）
@@ -2172,6 +2179,38 @@ class PlayerActivity : AppCompatActivity() {
         rebuildPlayer()
     }
 
+    /**
+     * 菜单「收藏此剧 / 取消收藏」。
+     *
+     * 刷短剧是「换着看」的形态，用户对某部剧感兴趣时必须退出播放器再找详情页
+     * 才能收藏，路径太长；换剧又是高频动作，没这个入口用户根本留不住刚刷到的剧。
+     * 收藏与历史/详情页共用同一份 WatchHistory，换剧后 seriesId 已是新剧，
+     * 收藏的自然是当前在播的那部。
+     */
+    private fun toggleFavoriteFromMenu() {
+        if (seriesId.isEmpty()) return
+        val fav = try { App.watchHistory.toggleFavorite(seriesId, title, cover) } catch (_: Exception) { false }
+        toast(getString(if (fav) R.string.favorite_added else R.string.favorite_removed))
+        updateFavoriteLabel()
+    }
+
+    /** 菜单「剧集详情」：跳详情页看简介/全部剧集/收藏状态；返回后 onResume 自动续播。 */
+    private fun openSeriesDetail() {
+        if (seriesId.isEmpty()) return
+        recordHistory(force = true)
+        val intent = Intent(this, DetailActivity::class.java)
+        intent.putExtra(DetailActivity.EXTRA_SERIES_ID, seriesId)
+        intent.putExtra(DetailActivity.EXTRA_TITLE, title)
+        intent.putExtra(DetailActivity.EXTRA_COVER, cover)
+        startActivity(intent)
+    }
+
+    /** 菜单收藏项文案：「收藏此剧」/「取消收藏」，随当前剧状态刷新。 */
+    private fun updateFavoriteLabel() {
+        val fav = try { seriesId.isNotEmpty() && App.watchHistory.isFavorite(seriesId) } catch (_: Exception) { false }
+        menuFavorite.text = getString(if (fav) R.string.menu_favorite_remove else R.string.menu_favorite_add)
+    }
+
     /** 用当前解码方式重建播放器，保持本集播放位置与播放状态。 */
     private fun rebuildPlayer() {
         val old = player ?: return
@@ -3179,13 +3218,14 @@ class PlayerActivity : AppCompatActivity() {
         updateDanmakuSizeLabel()
         updateDanmakuAreaLabel()
         updateDecoderLabel()
+        updateFavoriteLabel()
         // 触屏设备不抢焦点，避免菜单首项出现红框高亮（TV 需焦点才能用遥控器选择）
         if (UiScale.isTv(this)) menuFill.post { menuFill.requestFocus() }
     }
 
     /**
-     * 手机横屏（翻转看横版画幅短剧）时屏幕高度只剩约 390dp，菜单 8 项
-     * （触控下限 48dp + 间距）约 540dp 会溢出到屏幕外，底部「退出播放」点不到。
+     * 手机横屏（翻转看横版画幅短剧）时屏幕高度只剩约 390dp，菜单十来项
+     * （触控下限 48dp + 间距）约 600dp 会溢出到屏幕外，底部「退出播放」点不到。
      * 这里给面板限高到可用区域，让外层 ScrollView 承担滚动。
      *
      * 只在手机横屏生效：TV 是 1280×720dp 画布（面板约 540dp 放得下）、
