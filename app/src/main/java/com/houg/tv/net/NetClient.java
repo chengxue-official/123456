@@ -2109,7 +2109,9 @@ public final class NetClient {
         profile.put("device_brand", android.os.Build.BRAND);
         profile.put("os_version", android.os.Build.VERSION.RELEASE);
         profile.put("os_api", String.valueOf(android.os.Build.VERSION.SDK_INT));
-        profile.put("rom_version", android.os.Build.DISPLAY + " release-keys");
+        String display = android.os.Build.DISPLAY == null ? "" : android.os.Build.DISPLAY.trim();
+        profile.put("rom_version", display.toLowerCase(Locale.US).contains("release-keys")
+                ? display : display + " release-keys");
         try {
             android.util.DisplayMetrics dm = android.content.res.Resources.getSystem().getDisplayMetrics();
             int w = dm.widthPixels, h = dm.heightPixels;

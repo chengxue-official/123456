@@ -133,6 +133,16 @@ class PlayerActivity : AppCompatActivity() {
     private var qualityIndex = 0
     /** 本集实际取到的清晰度高度（videoModel 返回），0 表示未知（如命中本地缓存）。 */
     private var currentVariantHeight = 0
+    /**
+     * 运行期自适应清晰度上限（0 = 未触发）。
+     *
+     * <p>场景（2.2.4 线上/模拟器实证）：v5 只下发 encrypted=true 的 HEVC 档，
+     * 弱解码器选 1080P 后「声音在走、画面冻住」——停滞看门狗判定为「仅画面」
+     * 并把同一档反复重建，用户看到的就是「画面卡住，重新连接」。
+     * 这类停滞是解码算力不足，不是流坏了，重建同档只会再卡；正确解法是降一档。
+     * 只在「自动」清晰度下生效，用户显式选档时无条件尊重（切换清晰度会清零）。
+     */
+    private var stallCapHeight = 0
     /** 本集实际取到的编码（videoModel 返回，如 bytevc1/avc），空串表示未知（如命中本地缓存）。 */
     private var currentVariantCodec = ""
     /**
@@ -1281,11 +1291,14 @@ class PlayerActivity : AppCompatActivity() {
      */
     private fun maxVariantHeight(): Int {
         val base = normalMaxHeight()
-        if (!softCapActive()) return base
-        // 自动档/原画没有显式上限：按 1080 为基准降一档到 720（不能拿「本集已取到的高度」
-        // 当基准——那样降档上限会跟着结果浮动，兼容资源判定也会自相矛盾）。
-        val from = if (base > 0) base else 1080
-        return softTierDown(from)
+        val soft = if (!softCapActive()) base else {
+            // 自动档/原画没有显式上限：按 1080 为基准降一档到 720（不能拿「本集已取到的高度」
+            // 当基准——那样降档上限会跟着结果浮动，兼容资源判定也会自相矛盾）。
+            val from = if (base > 0) base else 1080
+            softTierDown(from)
+        }
+        // 画面停滞自适应降档优先于其它上限（取更小者）
+        return if (stallCapHeight > 0 && (soft <= 0 || stallCapHeight < soft)) stallCapHeight else soft
     }
 
     /** 未经软解降档的常规上限，语义与旧版一致。 */
@@ -1307,6 +1320,15 @@ class PlayerActivity : AppCompatActivity() {
         height >= 1080 -> 720
         height >= 720 -> 480
         else -> height
+    }
+
+    /** 画面停滞降档的「下一档」：按服务端常见档位 1080→720→540→480→360 递降。 */
+    private fun nextTierDown(height: Int): Int = when {
+        height > 720 -> 720
+        height > 540 -> 540
+        height > 480 -> 480
+        height > 360 -> 360
+        else -> 0
     }
 
     /** 设备能力上限：运行期恒定，只判定一次（isLowEndDevice 会读 /proc/meminfo）。 */
@@ -1842,6 +1864,8 @@ class PlayerActivity : AppCompatActivity() {
         val cur = avail.indexOf(qualityIndex)
         // 当前档不在可用列表（比如上一集持久化的档位本集没有）时回退到「自动」
         qualityIndex = if (cur >= 0) avail[(cur + 1) % avail.size] else avail[0]
+        // 用户手动切档 = 明确表达偏好：清掉停滞自适应降档的上限，重新按所选档来
+        stallCapHeight = 0
         // 【检验环节2】切档时记录可用档位与新选中档（排查「切完没反应/缺档」）
         AppLog.d("PlayerActivity", "【检验环节2】切档 可用下标=" + avail
                 + " → 新档下标=" + qualityIndex
@@ -3253,6 +3277,33 @@ class PlayerActivity : AppCompatActivity() {
         // 基准跟着重置，否则下一次 500ms 轮询立刻又判一遍停滞
         lastVideoFrameAt = now
         stallSampleAt = now
+
+        // 仅画面停滞＝解码器喂不上帧（进度/声音都在走）。这不是流坏了，重建同档只会
+        // 再卡一次（2.2.4 v5 只下发 encrypted HEVC 后尤其明显），自动档下直接降一档：
+        // 1080→720→480，480 以下不再降（已无算力收益）。用户手动选档时不干预。
+        if (!hard && qualityIndex == QUALITY_AUTO) {
+            // 实际正在播的档（服务端可能无视上限回更高的档，此时以实际档为基准）
+            val actual = currentVariantHeight
+            val tierNow = if (actual > 0) actual else stallCapHeight
+            if (tierNow > 0) {
+                // 优先挑「本集真实下发过的」下一档；拿不到就按常见档位递减
+                val next = availableHeights.filter { it in 1 until tierNow }
+                        .maxOrNull() ?: nextTierDown(tierNow)
+                // 只允许往「比历史上限更低」的方向降：服务端不听上限时避免原地循环重建
+                val floor = if (stallCapHeight > 0) stallCapHeight else Int.MAX_VALUE
+                if (next in 1 until minOf(tierNow, floor)) {
+                    stallCapHeight = next
+                    AppLog.d("PlayerActivity", "仅画面停滞→自动降档 " + tierNow + "P→" + next
+                            + "P" + playbackTag())
+                    toast("画面卡顿，已自动降到 " + next + "P")
+                    try { recordHistory(force = true) } catch (_: Exception) {}
+                    stallRecoveries = 0
+                    stallRebuilds = 0
+                    rebuildPlayer()
+                    return
+                }
+            }
+        }
 
         if (stallRecoveries >= 2) {
             if (stallRebuilds >= STALL_MAX_REBUILDS) {
