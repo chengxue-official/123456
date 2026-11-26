@@ -78,6 +78,18 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         UiScale.applyImmersive(this)
         setContentView(R.layout.activity_main)
+        // [接口自检] am start ... --ez eptest true 触发，结果见 logcat -s EpTest
+        if (intent?.getBooleanExtra("eptest", false) == true) {
+            com.houg.tv.net.EndpointSelfTest.run(this)
+        }
+        // 配置要求的最低客户端版本：不满足提示升级，而不是白屏
+        if (com.houg.tv.net.EndpointConfig.clientTooOld(BuildConfig.VERSION_CODE)) {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("需要更新")
+                .setMessage("当前版本过低（要求 " + com.houg.tv.net.EndpointConfig.minClient() + "），请更新后使用。")
+                .setPositiveButton("知道了", null)
+                .show()
+        }
         // 手机端触控目标：40dp 搜索/工具按钮抬到 48dp（TV 不生效）
         UiScale.enforceTouchTargets(findViewById(android.R.id.content))
 

@@ -333,6 +333,10 @@ class SettingsActivity : AppCompatActivity() {
                 App.searchHistory.clear()
                 toast(R.string.cleared)
             }
+
+        findViewById<View>(R.id.link_endpoint_diag).setOnClickListener {
+            startActivity(Intent(this, EndpointDiagActivity::class.java))
+        }
         }
 
         // 设备身份

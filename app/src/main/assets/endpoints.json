@@ -1,0 +1,68 @@
+{
+  "_comment": "接口配置（测试版）。接口炸了只改这里，不动代码。数据来源：官方 7.4.5.32 静态+运行时提取。",
+  "version": 5,
+  "generated_from": "novelread 7.4.5.32 (74532)",
+  "hosts": {
+    "api_primary": [
+      "api5-normal-sinfonlinea.fqnovel.com",
+      "api5-normal-hl.fqnovel.com",
+      "api5-normal-sinfonlineb.fqnovel.com"
+    ],
+    "web_ssr": [
+      "hongguoduanju.com",
+      "www.hongguoduanju.com"
+    ],
+    "cdn_image": [
+      "lf3-reading.fqnovelpic.com",
+      "p3-reading.byteimg.com",
+      "p6-novel.byteimg.com"
+    ],
+    "settings": [
+      "is.snssdk.com"
+    ]
+  },
+  "endpoints": {
+    "v5_playback": {
+      "host": "api_primary",
+      "path": "/novel/player/video_model/v1/",
+      "method": "POST"
+    },
+    "v5_playback_multi": {
+      "host": "api_primary",
+      "path": "/novel/player/multi_video_model/player/v1",
+      "method": "POST"
+    },
+    "read_history_list": {
+      "host": "api_primary",
+      "path": "/reading/bookapi/read_history/list/v",
+      "method": "GET"
+    },
+    "read_progress_list": {
+      "host": "api_primary",
+      "path": "/reading/bookapi/read_progress/list/v",
+      "method": "GET"
+    },
+    "client_report": {
+      "host": "api_primary",
+      "path": "/reading/bookapi/client_report/v",
+      "method": "POST"
+    },
+    "device_info_report": {
+      "host": "api_primary",
+      "path": "/luckycat/novel/v1/task/report/device_info",
+      "method": "POST"
+    },
+    "settings": {
+      "host": "settings",
+      "path": "/service/settings/v3/",
+      "method": "GET"
+    }
+  },
+  "web_paths": {
+    "category": "/category/{key}",
+    "rank": "/rank/{board}",
+    "detail": "/detail?series_id={id}",
+    "search": "/search?query={kw}"
+  },
+  "min_client": 0
+}

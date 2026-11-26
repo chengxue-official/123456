@@ -479,6 +479,22 @@
                             style="@style/SettingsLink"
                             android:text="@string/clear" />
                     </LinearLayout>
+
+                    <!-- 接口自检（测试版） -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="接口自检" />
+                            <TextView style="@style/SettingsGroupDesc" android:text="配置版本 / 来源 / 各接口连通性" />
+                        </LinearLayout>
+                        <TextView
+                            android:id="@+id/link_endpoint_diag"
+                            style="@style/SettingsLink"
+                            android:text="打开" />
+                    </LinearLayout>
                 </LinearLayout>
 
                 <LinearLayout

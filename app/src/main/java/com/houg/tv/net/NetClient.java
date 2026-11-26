@@ -1208,7 +1208,7 @@ public final class NetClient {
         int page = offset / WEB_CATEGORY_PAGE_SIZE + 1;
         if (page < 1) page = 1;
         if (page > WEB_CATEGORY_MAX_PAGE) throw new Exception("栏目翻页超出上限");
-        String url = WEB_SITE + "/category/" + webCategoryPath(genreKey)
+        String url = EndpointConfig.INSTANCE.webBase() + "/category/" + webCategoryPath(genreKey)
                 + (page > 1 ? "?page=" + page : "");
         AppLog.INSTANCE.d(TAG, "【栏目】网页版 genre=" + genreKey + " url=" + url);
         JSONObject root = fetchRouterData(url);
@@ -1324,7 +1324,7 @@ public final class NetClient {
 
     /** 单次「抓取 + 解析 + 校验」，不含重试与缓存。 */
     private RankingPage fetchRanking(RankBoard board, int page) throws Exception {
-        String url = WEB_SITE + "/rank/" + board.path + (page > 1 ? "?page=" + page : "");
+        String url = EndpointConfig.INSTANCE.webBase() + "/rank/" + board.path + (page > 1 ? "?page=" + page : "");
         AppLog.INSTANCE.d(TAG, "ranking board=" + board.boardId + " page=" + page);
         List<RankItem> items;
         String html;
@@ -1631,7 +1631,7 @@ public final class NetClient {
 
     /** 网页版详情：seriesDetail.vid_list 字符串数组，集号按下标 + 1。 */
     private SeriesDetail webDetail(String seriesId) throws Exception {
-        String url = WEB_SITE + "/detail?series_id=" + encode(seriesId);
+        String url = EndpointConfig.INSTANCE.webBase() + "/detail?series_id=" + encode(seriesId);
         JSONObject root = fetchRouterData(url);
         JSONObject pageObj = findLoaderPage(root, "detail_page", "detail_");
         if (pageObj == null) {
@@ -1785,7 +1785,7 @@ public final class NetClient {
                 }
                 if (v5Body != null) {
                     try {
-                        JSONObject json = playbackPostV5(V5_PLAYER_URL, v5Body);
+                        JSONObject json = playbackPostV5(v5PlayerUrl(), v5Body);
                         if (json == null) {
                             emptyBodyCount++;
                             lastError = new Exception("播放接口空响应");
@@ -2034,6 +2034,11 @@ public final class NetClient {
 
     /** v5 播放取流端点（2026-11-24 上游迁移后的可用地址，仅 a 域名）。 */
     private static final String V5_PLAYER_URL = PlaybackSignerV5.base();
+
+    /** v5 取流端点：优先用 endpoints.json 配置，失败自动轮换域名 */
+    private static String v5PlayerUrl() {
+        return EndpointConfig.INSTANCE.apiUrl("v5_playback", V5_PLAYER_URL);
+    }
 
     /** v5 取流 body：HGTV 1.3.9.3 model-direct（/novel/player/video_model/v1/）同款。 */
     private static byte[] buildV5Body(String vid) throws Exception {
@@ -3037,11 +3042,11 @@ public final class NetClient {
      * series_id 的记录。{@code video_data} 结构与搜索页一致，直接复用 parseDrama。
      */
     private List<Drama> fetchSuggestDramas(String keyword, int count) throws Exception {
-        String url = WEB_SITE + "/incent_resource/suggestion?app_id=" + SUGGEST_APP_ID
+        String url = EndpointConfig.INSTANCE.webBase() + "/incent_resource/suggestion?app_id=" + SUGGEST_APP_ID
                 + "&query=" + encode(keyword) + "&count=" + count;
         Request.Builder rb = new Request.Builder().url(url)
                 .header("User-Agent", WEB_UA)
-                .header("Referer", WEB_SITE + "/")
+                .header("Referer", EndpointConfig.INSTANCE.webBase() + "/")
                 .header("Accept", "application/json")
                 .header("Accept-Language", "zh-CN,zh;q=0.9");
         // 建议接口是搜索主数据源（网页搜索页固定只有 10 条）。原先只发一次，
@@ -4001,7 +4006,7 @@ public final class NetClient {
             try {
                 Request.Builder rb = new Request.Builder().url(url)
                         .header("User-Agent", WEB_UA)
-                        .header("Referer", WEB_SITE + "/")
+                        .header("Referer", EndpointConfig.INSTANCE.webBase() + "/")
                         .header("Accept-Language", "zh-CN,zh;q=0.9");
                 try (Response resp = http.newCall(rb.build()).execute()) {
                     if (!resp.isSuccessful()) {
