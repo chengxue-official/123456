@@ -3365,6 +3365,10 @@ class PlayerActivity : AppCompatActivity() {
         lastVideoFrameAt = now
         stallSampleAt = now
 
+        if (!STALL_RESCUE_ENABLED) {
+            return
+        }
+
         // 仅画面停滞＝解码器喂不上帧（进度/声音都在走）。这不是流坏了，重建同档只会
         // 再卡一次（2.2.4 v5 只下发 encrypted HEVC 后尤其明显），自动档下直接降一档：
         // 1080→720→480，480 以下不再降（已无算力收益）。用户手动选档时不干预。
@@ -3895,7 +3899,11 @@ class PlayerActivity : AppCompatActivity() {
          * 降到 1000ms：一次 1.2s 的冻屏就能被抓住，走「原地 seek 重同步」把画面拉回音频位置。
          * 静态画面不会误判：视频帧仍在按时间戳渲染，帧心跳照常（见 frameHeartbeat）。
          */
-        private const val VIDEO_STALL_MS = 1000L
+        // 用户反馈「停滞自救」比 2.1.6 更差（seek/重建引起跳帧与音画错位），
+// 默认关闭自救动作，只保留诊断日志；要恢复把开关改 true（此时沿用 1s 阈值与不降档策略）。
+private const val STALL_RESCUE_ENABLED = false
+
+private const val VIDEO_STALL_MS = 1000L
 
         /** 两次停滞自救的最小间隔：避免 500ms 轮询在没救回来时连环触发。 */
         private const val STALL_RECOVER_GAP_MS = 15_000L
