@@ -2471,17 +2471,42 @@ class PlayerActivity : AppCompatActivity() {
                 val video = withContext(Dispatchers.IO) {
                     App.netClient.videoModel(vid, target, qualityIndex != QUALITY_AUTO)
                 }
-                val file = withContext(Dispatchers.IO) { prepareClearFile(video) }
-                if (!file.exists() || file.length() <= 0L) return@launch
+                // ⚠️ 不能走 prepareClearFile：它按 vid+档位缓存，720P 起播时已经把
+                // clear_<vid>_auto720.mp4 写好了，这里会直接命中缓存返回 720P 文件，
+                // 等于「永远升不上去」（线上就是这个表现）。
+                // 升级专用文件名，确保真的下载一次高清版。
+                val hiFile = withContext(Dispatchers.IO) { downloadVariantTo(video, "_hi") }
+                if (hiFile == null || !hiFile.exists() || hiFile.length() <= 0L) return@launch
                 if (vidList.getOrNull(currentPos) != vid) return@launch
                 if (isFinishing || isDestroyed) return@launch
+                val pos = player?.currentPosition ?: 0L
+                AppLog.d("PlayerActivity", "首播升级 720P→" + target + "P 就绪，切回高清 vid=" + vid
+                        + " 位置=" + pos)
                 startupCapHeight = 0
-                AppLog.d("PlayerActivity", "首播升级 720P→" + target + "P 就绪，切回高清 vid=" + vid)
-                replayCurrentEpisode()
+                startPlayback(Uri.fromFile(hiFile))
             } catch (e: Exception) {
                 AppLog.d("PlayerActivity", "首播升级失败（保持低档）：" + (e.message ?: ""))
             }
         }
+    }
+
+    /** 把指定 video 模型的首个可用变体下载+解密到「升级专用」文件名；失败返回 null。 */
+    private fun downloadVariantTo(video: NetClient.VideoModel, suffix: String): File? {
+        val out = File(cacheDir, "clear_" + video.videoId + "_" + cacheTag() + suffix + ".mp4")
+        if (out.exists() && out.length() > 0L) return out
+        for (v in video.variants) {
+            if (v.encrypted && v.cencKey == null) continue
+            try {
+                downloadAndPrepare(
+                    v.urls,
+                    if (v.encrypted) v.cencKey else null,
+                    video.videoId, out, 0L, prefetch = false)
+                if (out.exists() && out.length() > 0L) return out
+            } catch (e: Exception) {
+                AppLog.d("PlayerActivity", "升级下载变体失败 codec=" + v.codec + " " + (e.message ?: ""))
+            }
+        }
+        return null
     }
 
     private fun prefetchFeedNext() {
