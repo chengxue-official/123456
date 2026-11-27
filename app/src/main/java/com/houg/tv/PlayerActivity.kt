@@ -954,13 +954,20 @@ class PlayerActivity : AppCompatActivity() {
 
         // 系统组件与 media3 冲突（YunOS 旧版 Guava，见 systemAudioLibraryBroken）：
         // 建播放器必崩，先给可读提示，别让用户看到闪退。
-        if (systemAudioLibraryBroken()) {
-            AppLog.e("PlayerActivity",
-                    "系统 Guava 版本过低（缺 ImmutableMap.Builder.buildOrThrow），无法创建播放器", null)
+        // 系统库冲突（YunOS 旧版 Guava）原先在这里直接拒绝播放；但同机型上 HGTV 用
+        // ExoPlayer 能正常播，说明这个「检测到缺方法」不等于「一定建不起来」。
+        // 改为先尝试创建，真抛异常再给可读提示——避免把能播的机器误判成不能播。
+        val sysRisk = systemAudioLibraryBroken()
+        if (sysRisk) {
+            AppLog.d("PlayerActivity", "检测到系统 Guava 缺少 buildOrThrow，先尝试创建播放器")
+        }
+        player = try {
+            buildPlayer()
+        } catch (t: Throwable) {
+            AppLog.e("PlayerActivity", "创建播放器失败（系统库冲突=" + sysRisk + "）", t)
             showError("本机系统组件与播放器冲突，暂时无法播放。请把电视系统升级到最新版后重试")
             return
         }
-        player = buildPlayer()
         player!!.setVideoSurfaceView(surfaceView)
         player!!.setVideoFrameMetadataListener(frameHeartbeat)
         player!!.setAudioAttributes(AudioAttributes.DEFAULT, /*handleAudioFocus=*/true)
