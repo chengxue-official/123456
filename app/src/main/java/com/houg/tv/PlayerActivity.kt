@@ -1156,8 +1156,17 @@ class PlayerActivity : AppCompatActivity() {
         // 一轮去预取别的集并把 prefetchRunning 重新置 true，届时等待方既分不清
         // 「等的那一集已出结果」，超时时的取消还会把新一轮的正常预取一起杀掉）。
         val adoptedJob = if (adoptPrefetch) prefetchJob else null
+        // 预取目标若仍在新位置的「未来」里（第 N+1 / N+2 集），就别取消：
+        // 换集时把已下了一半的任务掐掉，等于下次从头再下，命中率被白白拉低。
+        val targetStillAhead = run {
+            val tv = prefetchTargetVid ?: return@run false
+            val ti = vidList.indexOf(tv)
+            ti > 0 && ti > currentPos
+        }
         if (adoptPrefetch) {
             AppLog.d("PlayerActivity", "本集正在预取中，等它落盘 vid=$vid")
+        } else if (targetStillAhead) {
+            AppLog.d("PlayerActivity", "预取目标仍在后续窗口，保留不取消 vid=" + prefetchTargetVid)
         } else {
             prefetchJob?.cancel()
             prefetchJob = null
@@ -4256,7 +4265,11 @@ private const val VIDEO_STALL_MS = 1000L
          * 砍到 1：保留「下一集秒开」这一最核心收益，取流频率降为原来的 1/3。
          * 手动跳集（选集弹窗）仍走现场取流+下载，只是没有预热缓存。
          */
-        private const val PREFETCH_AHEAD = 1
+        /**
+         * 预取窗口深度：当前集之后预下载几集。
+         * 2 = 下一集 + 下下一集：用户刷得快（一集几十秒）时，第 2 集也有机会赶在切过去前备好。
+         */
+        private const val PREFETCH_AHEAD = 2
 
         /**
          * 起播时若本集正在被预取，最多等它落盘的时间。
