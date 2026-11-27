@@ -1187,8 +1187,11 @@ class PlayerActivity : AppCompatActivity() {
         stallSampleAt = 0L
 
         updateEpisodeInfo()
-        // 无感切集：不立刻弹转圈，延迟 400ms 仍没出画面再显示（见 scheduleLoading）
-        scheduleLoading()
+        // 无感切集：不立刻弹转圈，延迟 400ms 仍没出画面再显示（见 scheduleLoading）。
+        // 缓存命中时解码器初始化常要 0.6~1s，400ms 阈值会让每次换集都闪一下转圈；
+        // 命中缓存给更长的宽限，真正在下载时才用短延迟（那才是用户需要反馈的时候）。
+        val cachedNow = findCachedClearFile(vid) != null
+        scheduleLoading(if (cachedNow) LOADING_SHOW_DELAY_CACHED_MS else LOADING_SHOW_DELAY_MS)
         errorPanel.visibility = View.GONE
 
         // 挂兜底：无论 STATE_READY / onPlayerError 谁先到（或都没到），
@@ -3491,10 +3494,10 @@ class PlayerActivity : AppCompatActivity() {
     private val hideLoadingRunnable = Runnable { hideLoading() }
 
     /** 起播开始：延迟 [LOADING_SHOW_DELAY_MS] 再显示转圈，快的切集全程不闪。 */
-    private fun scheduleLoading() {
+    private fun scheduleLoading(delayMs: Long = LOADING_SHOW_DELAY_MS) {
         loadingPending = true
         handler.removeCallbacks(showLoadingRunnable)
-        handler.postDelayed(showLoadingRunnable, LOADING_SHOW_DELAY_MS)
+        handler.postDelayed(showLoadingRunnable, delayMs)
     }
 
     /** 出首帧 / 就绪 / 失败时收起转圈（幂等）。 */
@@ -4230,6 +4233,9 @@ private const val VIDEO_STALL_MS = 1000L
          * 立刻弹转圈会让「无感切集」闪一下，反而割裂。
          */
         private const val LOADING_SHOW_DELAY_MS = 400L
+
+        /** 命中本地缓存的切集：给更长的转圈宽限，避免每次换集闪一下 loading */
+        private const val LOADING_SHOW_DELAY_CACHED_MS = 1200L
 
         /**
          * 起播 loading 的兜底隐藏时长：个别 ROM 不回调 onRenderedFirstFrame，
