@@ -16,6 +16,7 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.houg.tv.net.NetClient
+import com.houg.tv.util.AppLog
 import com.houg.tv.update.UpdateDialog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -320,9 +321,17 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this@MainActivity, R.string.feed_empty, Toast.LENGTH_SHORT).show()
                     return@launch
                 }
-                // 口味记忆：命中用户常刷标签的排前面（只改顺序，不改集合）
+                // 少推已经看过的：历史里有记录的剧先剔掉；剔完太少（<3 部）就保留全集
+                val watched = runCatching {
+                    App.watchHistory.list().map { it.seriesId }.toSet()
+                }.getOrDefault(emptySet())
+                val unseen = dramas.filter { it.id !in watched }
+                val pool = if (unseen.size >= 3) unseen else dramas
+                AppLog.d("MainActivity", "刷短剧候选 " + dramas.size + " 部，其中未看过 "
+                        + unseen.size + " 部（历史 " + watched.size + " 部）")
+                // 口味记忆：命中用户常刷标签的排前面（只改顺序）
                 val topTags = com.houg.tv.data.FeedTaste.top(this@MainActivity)
-                val picked = dramas.shuffled()
+                val picked = pool.shuffled()
                     .sortedByDescending { d -> d.tags.count { it in topTags } }
                 startActivity(
                     Intent(this@MainActivity, PlayerActivity::class.java)

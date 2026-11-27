@@ -2927,7 +2927,13 @@ class PlayerActivity : AppCompatActivity() {
                 feedOffset = page.nextOffset
                 feedSession = page.sessionId
                 val known = feedIds ?: emptyList()
-                val rows = page.dramas.filter { it.id.isNotEmpty() && it.id !in known }
+                val all = page.dramas.filter { it.id.isNotEmpty() && it.id !in known }
+                // 少推看过的：历史里有记录的优先剔掉；剔完太少就保留原样，避免 feed 断流
+                val watched = runCatching {
+                    App.watchHistory.list().map { it.seriesId }.toSet()
+                }.getOrDefault(emptySet())
+                val fresh = all.filter { it.id !in watched }
+                val rows = if (fresh.size >= 3) fresh else all
                 if (rows.isNotEmpty()) {
                     feedIds = known + rows.map { it.id }
                     feedTitles = (feedTitles ?: emptyList()) + rows.map { it.title }
