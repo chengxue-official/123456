@@ -133,6 +133,7 @@ public final class CencMp4Downloader {
         if (total < PARALLEL_MIN_BYTES) return false;
 
         final long len = total;
+        final long t0 = System.currentTimeMillis();
         final int threads = PARALLEL_THREADS;
         final long seg = (len + threads - 1) / threads;
         final java.util.concurrent.atomic.AtomicReference<Exception> err =
@@ -189,6 +190,10 @@ public final class CencMp4Downloader {
             } catch (Exception ignore) {
             }
         }
+        long cost = System.currentTimeMillis() - t0;
+        com.houg.tv.util.AppLog.INSTANCE.d("CencMp4Downloader",
+                "并发下载 " + threads + " 路 大小=" + (len / 1024 / 1024) + "MB 用时=" + cost
+                        + "ms 速度=" + (len / 1024 / Math.max(1, cost)) + "KB/ms");
         if (err.get() != null) {
             try {
                 out.delete();
@@ -217,6 +222,7 @@ public final class CencMp4Downloader {
                 throw new Exception("HG媒体下载无响应体");
             }
             long total = resp.body().contentLength();
+            long singleT0 = System.currentTimeMillis();
             long written = 0L;
             try (InputStream in = resp.body().byteStream();
                  OutputStream os = new FileOutputStream(out)) {
@@ -229,6 +235,10 @@ public final class CencMp4Downloader {
                 os.flush();
             }
             // 服务端声明了长度却没读满：按失败处理，避免把半截文件当成功去解密/播放
+            long singleCost = System.currentTimeMillis() - singleT0;
+            com.houg.tv.util.AppLog.INSTANCE.d("CencMp4Downloader",
+                    "单连接下载 大小=" + (written / 1024 / 1024) + "MB 用时=" + singleCost
+                            + "ms 速度=" + (written / 1024 / Math.max(1, singleCost)) + "KB/ms");
             if (total > 0 && written < total) {
                 throw new Exception("HG媒体下载不完整 " + written + "/" + total);
             }
