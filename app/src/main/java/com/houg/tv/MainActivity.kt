@@ -320,7 +320,10 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this@MainActivity, R.string.feed_empty, Toast.LENGTH_SHORT).show()
                     return@launch
                 }
+                // 口味记忆：命中用户常刷标签的排前面（只改顺序，不改集合）
+                val topTags = com.houg.tv.data.FeedTaste.top(this@MainActivity)
                 val picked = dramas.shuffled()
+                    .sortedByDescending { d -> d.tags.count { it in topTags } }
                 startActivity(
                     Intent(this@MainActivity, PlayerActivity::class.java)
                         .putStringArrayListExtra(
@@ -329,6 +332,9 @@ class MainActivity : AppCompatActivity() {
                             PlayerActivity.EXTRA_FEED_TITLES, ArrayList(picked.map { it.title }))
                         .putStringArrayListExtra(
                             PlayerActivity.EXTRA_FEED_COVERS, ArrayList(picked.map { it.cover }))
+                        .putStringArrayListExtra(
+                            PlayerActivity.EXTRA_FEED_TAGS,
+                            ArrayList(picked.map { it.tags.joinToString("|") }))
                         .putExtra(PlayerActivity.EXTRA_FEED_INDEX, 0)
                         // 翻页游标跟着首页这次请求走，feed 播完存量后接着要下一页
                         .putExtra(PlayerActivity.EXTRA_FEED_OFFSET, page.nextOffset)

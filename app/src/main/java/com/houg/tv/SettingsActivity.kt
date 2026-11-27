@@ -314,6 +314,7 @@ class SettingsActivity : AppCompatActivity() {
         // 重置偏好：只恢复刷短剧类型偏好，收藏与观看记录不动（对齐 HGTV 的「只重置偏好」）
         findViewById<TextView>(R.id.btn_feed_reset).setOnClickListener {
             p.edit().putInt(FEED_GENRE, 0).apply()
+            com.houg.tv.data.FeedTaste.clear(this)
             renderFeed()
             android.widget.Toast.makeText(
                 this, getString(R.string.set_feed_reset_done), android.widget.Toast.LENGTH_SHORT

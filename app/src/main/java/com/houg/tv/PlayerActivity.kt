@@ -307,6 +307,8 @@ class PlayerActivity : AppCompatActivity() {
      * 普通模式这三个字段为 null，行为与旧版完全一致。
      */
     private var feedIds: List<String>? = null
+    /** 与 [feedIds] 一一对应：每部剧的标签（口味记忆用，可为空） */
+    private var feedTags: List<List<String>>? = null
     private var feedTitles: List<String>? = null
     private var feedCovers: List<String>? = null
     private var feedIndex = -1
@@ -858,6 +860,8 @@ class PlayerActivity : AppCompatActivity() {
             feedIds = ids
             feedTitles = intent.getStringArrayListExtra(EXTRA_FEED_TITLES)
             feedCovers = intent.getStringArrayListExtra(EXTRA_FEED_COVERS)
+            feedTags = intent.getStringArrayListExtra(EXTRA_FEED_TAGS)
+                    ?.map { csv -> csv.split('|').filter { it.isNotBlank() } }
             feedIndex = intent.getIntExtra(EXTRA_FEED_INDEX, 0)
                 .coerceIn(0, ids.size - 1)
             feedOffset = intent.getIntExtra(EXTRA_FEED_OFFSET, 0)
@@ -2794,6 +2798,8 @@ class PlayerActivity : AppCompatActivity() {
                     App.netClient.detail(ids[idx])
                 }
                 if (idx != feedIndex) return@launch
+                // 口味记忆：用户真的刷到了这一部，把它的标签记进本地偏好
+                feedTags?.getOrNull(idx)?.let { com.houg.tv.data.FeedTaste.bump(this@PlayerActivity, it) }
                 if (detail.episodes.isEmpty()) {
                     // 空剧（推荐流里的下架/异常剧）：静默跳下一部，不打断「刷」的节奏
                     AppLog.d("PlayerActivity", "feed 空剧跳过 id=" + ids[idx])
@@ -4019,6 +4025,8 @@ private const val VIDEO_STALL_MS = 1000L
         // ===== 刷短剧（feed）模式 extras =====
         /** 剧单：series_id / 剧名 / 封面，三个列表按下标一一对应 */
         const val EXTRA_FEED_IDS = "feed_ids"
+        /** 与 feed_ids 一一对应的标签（"|" 分隔），用于本地口味记忆 */
+        const val EXTRA_FEED_TAGS = "feed_tags"
         const val EXTRA_FEED_TITLES = "feed_titles"
         const val EXTRA_FEED_COVERS = "feed_covers"
         /** 进入时从第几部开始（默认 0） */
