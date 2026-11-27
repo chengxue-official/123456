@@ -311,8 +311,9 @@ class MainActivity : AppCompatActivity() {
         scope.launch {
             try {
                 val page = withContext(Dispatchers.IO) {
-                    // 推荐流：三大类混合 + 服务端 hot_score 排序（同推荐页数据源）
-                    App.netClient.recommend(0, "")
+                    // 推荐流：按设置页「刷短剧偏好」过滤类型 + 服务端 hot_score 排序
+                    App.netClient.recommend(
+                        0, "", SettingsActivity.feedGenreKey(this@MainActivity))
                 }
                 val dramas = page.dramas.filter { it.id.isNotEmpty() }
                 if (dramas.isEmpty()) {

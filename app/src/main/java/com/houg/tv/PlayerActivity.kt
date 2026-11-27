@@ -2870,7 +2870,8 @@ class PlayerActivity : AppCompatActivity() {
         scope.launch {
             try {
                 val page = withContext(Dispatchers.IO) {
-                    App.netClient.recommend(feedOffset, feedSession)
+                    App.netClient.recommend(feedOffset, feedSession,
+                            SettingsActivity.feedGenreKey(this@PlayerActivity))
                 }
                 feedHasMore = page.hasMore
                 feedOffset = page.nextOffset

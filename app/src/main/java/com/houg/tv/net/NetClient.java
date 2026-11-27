@@ -981,11 +981,28 @@ public final class NetClient {
      * 响应结构与目录页完全相同，直接复用 {@link #parseDrama}。
      */
     public CatalogPage recommend(int offset, String sessionId) throws Exception {
+        return recommend(offset, sessionId, "");
+    }
+
+    /**
+     * 推荐流（可指定类型偏好）。
+     *
+     * @param genreKey 空串/"all" = 三大类混合；否则只取该大类
+     *                 （short_play 真人剧 / comic_series 漫剧 / ai_series AI剧）。
+     *                 设置页「刷短剧偏好」即写在这里，用于让推荐流偏向用户口味。
+     */
+    public CatalogPage recommend(int offset, String sessionId, String genreKey) throws Exception {
         JSONArray genres = new JSONArray();
-        genres.put("short_play");
-        genres.put("comic_series");
-        genres.put("ai_series");
-        AppLog.INSTANCE.d(TAG, "recommend 推荐流 offset=" + offset + " genre=三大类混合 sort=hot_score");
+        boolean single = genreKey != null && !genreKey.isEmpty() && !"all".equals(genreKey);
+        if (single) {
+            genres.put(genreKey);
+        } else {
+            genres.put("short_play");
+            genres.put("comic_series");
+            genres.put("ai_series");
+        }
+        AppLog.INSTANCE.d(TAG, "recommend 推荐流 offset=" + offset
+                + " genre=" + (single ? genreKey : "三大类混合") + " sort=hot_score");
         return landpage(genres, "hot_score", "default", offset, sessionId);
     }
 

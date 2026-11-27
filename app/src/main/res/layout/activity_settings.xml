@@ -341,6 +341,22 @@
                         style="@style/SettingsGroupDesc"
                         android:text="@string/set_group_rec_desc" />
 
+                    <!-- 刷短剧偏好 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/set_feed_pref" />
+                            <TextView style="@style/SettingsHint" android:text="@string/set_feed_pref_hint" />
+                        </LinearLayout>
+                        <TextView
+                            android:id="@+id/opt_feed_pref"
+                            style="@style/SettingsOpt"
+                            android:text="@string/feed_pref_all" />
+                    </LinearLayout>
+
                     <!-- 继续观看 -->
                     <LinearLayout style="@style/SettingsRow">
                         <LinearLayout

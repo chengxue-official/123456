@@ -289,6 +289,28 @@ class SettingsActivity : AppCompatActivity() {
             p.edit().putBoolean(REC_NEW, it).apply()
         }
 
+        // 刷短剧偏好：0 全部 / 1 真人剧 / 2 漫剧 / 3 AI剧（PlayerActivity 拉 feed 时按它过滤）
+        val feedLabels = intArrayOf(
+            R.string.feed_pref_all, R.string.feed_pref_short,
+            R.string.feed_pref_comic, R.string.feed_pref_ai
+        )
+        val optFeed = findViewById<TextView>(R.id.opt_feed_pref)
+        fun renderFeed() {
+            val i = p.getInt(FEED_GENRE, 0).coerceIn(0, feedLabels.size - 1)
+            optFeed.text = getString(feedLabels[i])
+        }
+        renderFeed()
+        optFeed.setOnClickListener {
+            val cur = p.getInt(FEED_GENRE, 0).coerceIn(0, feedLabels.size - 1)
+            pickOption(
+                getString(R.string.set_feed_pref),
+                feedLabels.map { getString(it) }.toTypedArray(), cur
+            ) { which ->
+                p.edit().putInt(FEED_GENRE, which).apply()
+                renderFeed()
+            }
+        }
+
         // 继续观看数量（首页该行最多展示几部剧，默认 3）
         val counts = intArrayOf(3, 5, 8, 10)
         val optCount = findViewById<TextView>(R.id.opt_continue_count)
@@ -453,6 +475,18 @@ class SettingsActivity : AppCompatActivity() {
         const val UI_PREFS = "houg_ui"
         /** 内容推荐开关：MainActivity.onResume 里按这三个键门控各区块 */
         const val REC_CONTINUE = "rec_continue"
+        /** 刷短剧类型偏好：0 全部 / 1 真人剧 / 2 漫剧 / 3 AI剧 */
+        const val FEED_GENRE = "feed_genre"
+
+        /** 偏好下标 → 推荐流 genre key（与 NetClient.recommend 的入参对应） */
+        private val FEED_GENRE_KEYS = arrayOf("all", "short_play", "comic_series", "ai_series")
+
+        /** 当前「刷短剧偏好」对应的 genre key；all 表示三大类混合 */
+        fun feedGenreKey(context: android.content.Context): String {
+            val i = context.getSharedPreferences(UI_PREFS, android.content.Context.MODE_PRIVATE)
+                .getInt(FEED_GENRE, 0)
+            return FEED_GENRE_KEYS[i.coerceIn(0, FEED_GENRE_KEYS.size - 1)]
+        }
         const val REC_HOT = "rec_hot"
         const val REC_NEW = "rec_new"
         /** 首页「继续观看」展示的剧集数（默认 3，可配 3/5/8/10） */
