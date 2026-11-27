@@ -97,6 +97,27 @@ public final class CencMp4Downloader {
         throw retryableErr;
     }
 
+    /** 总内存 < 2GB 视为低端设备（读 /proc/meminfo，读不到按低端处理）。 */
+    private static boolean lowMemoryDevice() {
+        try {
+            java.io.BufferedReader r = new java.io.BufferedReader(
+                    new java.io.FileReader("/proc/meminfo"));
+            try {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    if (!line.startsWith("MemTotal:")) continue;
+                    String[] parts = line.trim().split("\\s+");
+                    long kb = Long.parseLong(parts[1]);
+                    return kb / 1024 < 2048;
+                }
+            } finally {
+                r.close();
+            }
+        } catch (Exception ignore) {
+        }
+        return true;
+    }
+
     /** 分段并发下载的最小体积：小文件并发反而更慢。 */
     private static final long PARALLEL_MIN_BYTES = 6L * 1024 * 1024;
     /** 并发连接数：CDN 单连接常被限速 2~4MB/s，多路并发显著提速。 */
@@ -134,7 +155,8 @@ public final class CencMp4Downloader {
 
         final long len = total;
         final long t0 = System.currentTimeMillis();
-        final int threads = PARALLEL_THREADS;
+        // 低内存设备（<2GB）降到 2 路：4 个连接 + 解密重封装同时跑容易顶不住
+        final int threads = lowMemoryDevice() ? 2 : PARALLEL_THREADS;
         final long seg = (len + threads - 1) / threads;
         final java.util.concurrent.atomic.AtomicReference<Exception> err =
                 new java.util.concurrent.atomic.AtomicReference<>();

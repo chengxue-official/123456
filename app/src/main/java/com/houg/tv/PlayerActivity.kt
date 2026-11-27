@@ -2461,8 +2461,31 @@ class PlayerActivity : AppCompatActivity() {
      * 先用 720P（体积约 1/3）把画面顶上，用户 3~5 秒内就能看；同时后台下 1080P，
      * 备好后按当前进度切回（切换只读本地文件，约 0.3~1 秒）。
      */
+    /** 当前是否 WiFi（预下载/高清升级只在 WiFi 做，移动网络省流量也更稳）。 */
+    private fun isOnWifi(): Boolean {
+        return try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            val net = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(net) ?: return false
+            caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** 低端盒子（<2GB 内存）不做高清升级：多下一次 1080P 只会更卡。 */
+    private fun boostViable(): Boolean =
+        DeviceInfo.totalMemoryMb() >= BOOST_MIN_MEMORY_MB
+
     private fun maybeStartStartupBoost() {
         if (startupCapHeight <= 0 || startupCapped) return
+        // 电视/移动网络保护：低内存盒子或非 WiFi 时不做升级，直接停在 720P
+        if (!boostViable() || !isOnWifi()) {
+            startupCapped = true
+            AppLog.d("PlayerActivity", "跳过首播升级（内存=" + DeviceInfo.totalMemoryMb()
+                    + "MB wifi=" + isOnWifi() + "）")
+            return
+        }
         startupCapped = true
         val vid = vidList.getOrNull(currentPos) ?: return
         val target = normalMaxHeight()
@@ -2484,6 +2507,11 @@ class PlayerActivity : AppCompatActivity() {
                         + " 位置=" + pos)
                 startupCapHeight = 0
                 startPlayback(Uri.fromFile(hiFile))
+                // 切到高清后立刻清掉低档那份，避免同一集在磁盘上占两份
+                val lowFile = File(cacheDir, "clear_" + vid + "_" + cacheTag() + ".mp4")
+                if (lowFile.exists() && lowFile.absolutePath != hiFile.absolutePath) {
+                    lowFile.delete()
+                }
             } catch (e: Exception) {
                 AppLog.d("PlayerActivity", "首播升级失败（保持低档）：" + (e.message ?: ""))
             }
@@ -2512,6 +2540,8 @@ class PlayerActivity : AppCompatActivity() {
     private fun prefetchFeedNext() {
         val ids = feedIds ?: return
         if (prefetchRunning || streamingCurrent) return
+        // 移动网络不预下载（一集 28~40MB，费流量也抢带宽）
+        if (!isOnWifi()) return
         val idx = feedIndex + 1
         if (idx < 0 || idx >= ids.size) return
         if (freeHeapBytes() < PREFETCH_MIN_FREE_HEAP_BYTES) return
@@ -4042,6 +4072,9 @@ class PlayerActivity : AppCompatActivity() {
 
         /** 首播降档档位（像素高）：720P 体积约为 1080P 的 1/3。 */
         private const val STARTUP_CAP_HEIGHT = 720
+
+        /** 允许做高清升级的最低总内存（MB）：低端盒子升级只会更卡 */
+        private const val BOOST_MIN_MEMORY_MB = 2048L
 
         /**
          * 播放停滞判定阈值（见 [checkVideoStall]）：播放中超过这么久没有新帧渲染、
