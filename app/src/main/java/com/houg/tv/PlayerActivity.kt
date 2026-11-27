@@ -443,7 +443,10 @@ class PlayerActivity : AppCompatActivity() {
                         // 带宽全程空闲；越早把后面几集拉进缓存，用户中途划走时越可能
                         // 命中缓存——这是「无感切集」的前提。后台起播（用户已按主页）
                         // 不预取，避免后台跑流量。
-                        if (isVisibleNow()) prefetchNext()
+                        // feed 模式预下载「下一部」，普通模式预取「下一集」
+                        if (isVisibleNow()) {
+                            if (feedIds != null) prefetchFeedNext() else prefetchNext()
+                        }
                     } else {
                         onNoVideoTrack()
                     }
@@ -2426,6 +2429,54 @@ class PlayerActivity : AppCompatActivity() {
      *  - 失败后按 [PREFETCH_FAIL_BACKOFF_MS] 退避（按当前倍速折算壁钟），
      *    不再永久拉黑该集：一次网络瞬断不该让整部剧后续集数全部失去缓存。
      */
+    /**
+     * 刷短剧模式：预下载「下一部」的第 1 集。
+     *
+     * 为什么单独一条：feed 模式下每播完一部就换下一部，[prefetchNext] 预取的是
+     * 「同一部的下一集」，对换剧毫无帮助——线上日志里每次换剧都是现场下载+解密
+     * （8~17MB，1~4 秒），用户体感就是「加载慢」。
+     */
+    private fun prefetchFeedNext() {
+        val ids = feedIds ?: return
+        if (prefetchRunning || streamingCurrent) return
+        val idx = feedIndex + 1
+        if (idx < 0 || idx >= ids.size) return
+        if (freeHeapBytes() < PREFETCH_MIN_FREE_HEAP_BYTES) return
+        prefetchRunning = true
+        prefetchJob = scope.launch {
+            try {
+                val detail = withContext(Dispatchers.IO) { App.netClient.detail(ids[idx]) }
+                val first = detail.episodes.minByOrNull { it.index } ?: return@launch
+                if (findCachedClearFile(first.vid) != null) {
+                    AppLog.d("PlayerActivity", "feed 下一部首集已在缓存 " + detail.title)
+                    return@launch
+                }
+                // 预取窗口内也不做同剧下一集：feed 模式下一步必然是换剧
+                val video = withContext(Dispatchers.IO) {
+                    App.netClient.videoModel(first.vid, maxVariantHeight(), qualityIndex != QUALITY_AUTO)
+                }
+                withContext(Dispatchers.IO) {
+                    for (v in video.variants) {
+                        if (v.encrypted && v.cencKey == null) continue
+                        try {
+                            downloadAndPrepare(
+                                v.urls,
+                                if (v.encrypted) v.cencKey else null,
+                                video.videoId, clearFile(video.videoId), 0L, prefetch = true)
+                            break
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+                AppLog.d("PlayerActivity", "feed 预下载下一部首集完成 " + detail.title)
+            } catch (e: Exception) {
+                AppLog.d("PlayerActivity", "feed 预下载失败 " + (e.message ?: ""))
+            } finally {
+                prefetchRunning = false
+            }
+        }
+    }
+
     private fun prefetchNext() {
         if (prefetchRunning) return
         // 当前集在边下边播：预加载下一集会抢同一根带宽，把正在播的流拖到缓冲。
@@ -3462,7 +3513,9 @@ class PlayerActivity : AppCompatActivity() {
                     // 兜底预取：正常在 STATE_READY 就已经开始预取，这里只在
                     // 之前那轮预取被切集取消/失败时补跑（窗口内有缺就补）。
                     // 放在这里而非弹幕函数内，避免「关闭弹幕导致预加载一并失效」。
-                    if (pos >= dur / 5) prefetchNext()
+                    if (pos >= dur / 5) {
+                        if (feedIds != null) prefetchFeedNext() else prefetchNext()
+                    }
                 }
                 updateDanmaku(p, pos, dur)
                 // 周期性落盘进度（节流 10s），保证异常退出也不丢进度
