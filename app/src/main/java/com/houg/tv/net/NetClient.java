@@ -2261,7 +2261,8 @@ public final class NetClient {
         String finalUrl = url;
         LinkedHashMap<String, String> headers;
         byte[] body = gzipPayload;
-        PlaybackSignerV5.Request req = PlaybackSignerV5.sign(url, profile, gzipPayload);
+        // 走可插拔签名链：自研 → 官方 dex → 官方 so（材料缺失自动回退）
+        PlaybackSignerV5.Request req = com.houg.tv.sign.SignerChain.sign(url, profile, gzipPayload);
         finalUrl = req.url;
         headers = req.headers;
         Request.Builder rb = new Request.Builder().url(finalUrl);

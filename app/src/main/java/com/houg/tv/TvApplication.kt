@@ -36,6 +36,7 @@ object App {
         netClient = NetClient(HttpClientProvider.get())
         // [测试版] 接口配置：assets 内建 -> 远端热更新（改配置不用重装 APK）
         com.houg.tv.net.EndpointConfig.load(app)
+        com.houg.tv.sign.SignerChain.attach(app)
         com.houg.tv.net.EndpointConfig.refreshRemoteAsync(app)
         // 注入季缓存落盘目录：同系列剧集 24h 缓存，冷启动也能复用（剧集更新极慢）
         netClient.setCacheDir(File(app.filesDir, "netcache"))
