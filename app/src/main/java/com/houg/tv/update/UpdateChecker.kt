@@ -78,7 +78,13 @@ object UpdateChecker {
      * 顺序：`www.` 子域优先——它的解析实测稳定，而部分电视（如 VIDAA）上裸域
      * `h\u006fnggu\u006f.kdns.fr` 会 DNS 解析失败，若排在前面会白等一轮超时才切到可用域。
      */
-    private val HOSTS = listOf(NEW_HOST, HOST)
+    /**
+     * Gitee 镜像（国内直连，实测 8.5MB/6.2s ≈ 1.4MB/s，比 EdgeOne 快百倍级）。
+     * 仓库只放发布物：update.json + 双 ABI APK + endpoints.json。
+     */
+    const val GITEE_MIRROR = "https://gitee.com/cheng-xue-official/gengxin/raw/master"
+
+    private val HOSTS = listOf(NEW_HOST, GITEE_MIRROR, HOST)
 
     /** 清单与自举源的持久化（成功读到清单后落盘，供下次检查与日志地址使用）。 */
     private const val PREFS = "update_checker"
@@ -86,6 +92,17 @@ object UpdateChecker {
     private const val PREF_LAST_HOST = "last_good_host"
 
     /** 每个域名的尝试次数：Cloudflare 边缘偶发 TCP/握手被重置，重试一次即可恢复。 */
+    /** 下载专用 OkHttp：APK 十几 MB，慢速网络下单次读可能停顿很久，必须给长超时 */
+    private val downloadClient: okhttp3.OkHttpClient by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .callTimeout(0, java.util.concurrent.TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
+    }
+
     private const val ATTEMPTS_PER_HOST = 3
 
     /** 重试前的等待，避免连续撞上同一段网络抖动。 */
@@ -352,23 +369,40 @@ object UpdateChecker {
     /** 下载单个 URL 到 tmp 并改名为 target。成功返回 true，否则写 [error] 返回 false。 */
     private fun downloadOne(url: String, tmp: File, target: File, error: StringBuilder): Boolean {
         return try {
-            tmp.delete()
             target.delete()
-            val req = Request.Builder().url(url).build()
-            val resp = HttpClientProvider.get().newCall(req).execute()
+            // —— 断点续传：已有部分文件就带 Range 接着下（EdgeOne 实测支持 206）——
+            var offset = if (tmp.exists()) tmp.length() else 0L
+            if (offset in 1 until MIN_APK_BYTES) {
+                tmp.delete()          // 太小，八成是上次的残渣
+                offset = 0
+            }
+            val builder = Request.Builder().url(url)
+            if (offset > 0) builder.header("Range", "bytes=$offset-")
+            val resp = downloadClient.newCall(builder.build()).execute()
             try {
+                if (resp.code() == 416) {
+                    tmp.delete()
+                    error.append("续传位置无效，已重置")
+                    return false
+                }
                 if (!resp.isSuccessful) {
                     error.append("下载失败：HTTP ${resp.code()}")
                     return false
                 }
-                val body = resp.body() ?: run {
+                val body = resp.body()
+                if (body == null) {
                     error.append("下载失败：响应为空")
                     return false
                 }
-                val total = body.contentLength()
-                var written = 0L
+                // 206 = 续传；200 = 服务端忽略 Range，必须从头写
+                val append = resp.code() == 206 && offset > 0
+                if (!append) {
+                    tmp.delete()
+                    offset = 0
+                }
+                var written = offset
                 body.byteStream().use { input ->
-                    tmp.outputStream().use { output ->
+                    java.io.FileOutputStream(tmp, append).use { output ->
                         val buf = ByteArray(64 * 1024)
                         while (true) {
                             val n = input.read(buf)
@@ -377,25 +411,31 @@ object UpdateChecker {
                             written += n
                         }
                         output.flush()
+                        output.fd.sync()
                     }
                 }
+                val total = if (append) {
+                    val cr = resp.header("Content-Range") ?: ""
+                    cr.substringAfterLast('/').trim().toLongOrNull() ?: -1L
+                } else {
+                    body.contentLength()
+                }
                 if (total > 0 && written < total) {
-                    error.append("下载不完整：$written/$total")
-                    tmp.delete()
-                    return false
+                    error.append("下载不完整：$written/$total（已保留，下次续传）")
+                    return false          // 保留 tmp，下一轮 Range 续上
                 }
                 if (!tmp.renameTo(target)) {
-                    // rename 失败（跨设备等）：直接复制
                     tmp.copyTo(target, overwrite = true)
                     tmp.delete()
                 }
+                AppLog.d(TAG, "下载完成 $written 字节（续传起点 $offset）")
                 true
             } finally {
                 resp.close()
             }
         } catch (e: Exception) {
             error.append("下载异常：" + (e.message ?: e.javaClass.simpleName))
-            false
+            false                          // 保留 tmp 供下次续传
         }
     }
 
