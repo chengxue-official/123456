@@ -67,6 +67,9 @@
     <string name="home_join_list">加入影单</string>
     <string name="set_feed_pref">刷短剧偏好</string>
     <string name="set_feed_pref_hint">按类型过滤推荐流，越窄越对口味但内容更少</string>
+    <string name="set_feed_reset">重置偏好</string>
+    <string name="set_feed_reset_hint">恢复成默认（全部类型），不影响收藏与观看记录</string>
+    <string name="set_feed_reset_done">偏好已重置</string>
     <string name="feed_pref_all">全部</string>
     <string name="feed_pref_short">真人剧</string>
     <string name="feed_pref_comic">漫剧</string>

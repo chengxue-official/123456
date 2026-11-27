@@ -357,6 +357,22 @@
                             android:text="@string/feed_pref_all" />
                     </LinearLayout>
 
+                    <!-- 重置偏好 -->
+                    <LinearLayout style="@style/SettingsRow">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView style="@style/SettingsLabel" android:text="@string/set_feed_reset" />
+                            <TextView style="@style/SettingsHint" android:text="@string/set_feed_reset_hint" />
+                        </LinearLayout>
+                        <TextView
+                            android:id="@+id/btn_feed_reset"
+                            style="@style/SettingsOpt"
+                            android:text="@string/set_feed_reset" />
+                    </LinearLayout>
+
                     <!-- 继续观看 -->
                     <LinearLayout style="@style/SettingsRow">
                         <LinearLayout
