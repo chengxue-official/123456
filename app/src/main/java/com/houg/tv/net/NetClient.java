@@ -151,6 +151,14 @@ public final class NetClient {
      */
     private static final long APP_CHANNEL_BUDGET_MS = 25_000L;
 
+    /** 最近一次空包/失败的 vid（自动对拍用） */
+    private static volatile String lastBlockedVid = "";
+    /** 自动对拍报告：写进日志，用户上传一次即可定位 */
+    private static volatile String lastDiagReport = "";
+    private static volatile long lastDiagAt = 0L;
+    private static final long DIAG_INTERVAL_MS = 6 * 3600_000L;
+
+
     /**
      * 取流串行锁（HGTV 1.3.6.2 的 M0 信号量同款）：同一时刻只允许一个取流请求链在跑。
      *
@@ -1914,6 +1922,10 @@ public final class NetClient {
         boolean blocked = dataResponses == 0 && emptyBodyCount > 0 && networkErrorCount == 0;
         blockedOut.set(blocked); // BUG-104：只影响本次取流的文案判定
         if (blocked) {
+            lastBlockedVid = vid;
+            maybeAutoDiag(vid);
+        }
+        if (blocked) {
             AppLog.INSTANCE.e(TAG, "App 播放通道 " + emptyBodyCount
                     + " 次全部返回 200 空 body（已退避重试多轮）| "
                     + "device_id=" + DeviceRegister.deviceId(), null);
@@ -2091,6 +2103,112 @@ public final class NetClient {
      * v5 播放器签名通道（2026-11-24 端点迁移）：PlaybackSignerV5（gzip body +
      * x-khronos/x-helios/x-medusa）+ 设备注册 Cookie。返回 null 表示「200 + 空 body」。
      */
+    /** 空包时自动跑对拍（6 小时一次），结果进日志 */
+    private void maybeAutoDiag(final String vid) {
+        long now = System.currentTimeMillis();
+        if (now - lastDiagAt < DIAG_INTERVAL_MS) return;
+        lastDiagAt = now;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    lastDiagReport = buildDiagReport(vid);
+                    AppLog.INSTANCE.d(TAG, "[DIAG] " + lastDiagReport);
+                } catch (Throwable t) {
+                    AppLog.INSTANCE.e(TAG, "[DIAG] 对拍异常", t);
+                }
+            }
+        }, "auto-diag").start();
+    }
+
+    /** 日志上传时取对拍报告（没有就现跑一份） */
+    public String diagReportForLog(String vid) {
+        String r = lastDiagReport;
+        if (r != null && !r.isEmpty()) return r;
+        try {
+            String v = (vid == null || vid.isEmpty()) ? lastBlockedVid : vid;
+            if (v != null && !v.isEmpty()) {
+                r = buildDiagReport(v);
+                lastDiagReport = r;
+            }
+        } catch (Throwable ignored) {
+        }
+        return r == null ? "" : r;
+    }
+
+    private String buildDiagReport(String vid) throws Exception {
+        StringBuilder sb = new StringBuilder("vid=").append(vid);
+        sb.append('\n').append(probeOne(vid, "baseline", false));
+        sb.append('\n').append(probeOne(vid, "official_mimic", true));
+        sb.append('\n').append(probeOne(vid, "no_cdid", false));
+        return sb.toString();
+    }
+
+    private String probeOne(String vid, String variant, boolean official) {
+        try {
+            LinkedHashMap<String, String> profile = PlaybackSigner.defaultDeviceProfile();
+            String dev = DeviceRegister.deviceId();
+            if (dev != null && !dev.isEmpty()) profile.put("device_id", dev);
+            String iid = DeviceRegister.installId();
+            if (iid != null && !iid.isEmpty()) profile.put("iid", iid);
+            String cdid = DeviceRegister.cdid();
+            if (!"no_cdid".equals(variant) && !cdid.isEmpty()) profile.put("cdid", cdid);
+            profile.put("device_type", android.os.Build.MODEL);
+            profile.put("device_brand", android.os.Build.BRAND);
+            profile.put("os_version", android.os.Build.VERSION.RELEASE);
+            profile.put("os_api", String.valueOf(android.os.Build.VERSION.SDK_INT));
+            if (official) {
+                profile.put("dragon_device_type", "pad");
+                profile.put("is_android_pad_screen", "1");
+                profile.put("player_so_load", "1");
+                profile.put("pv_player", "74532");
+                profile.put("compliance_status", "0");
+            }
+            byte[] body = official ? officialBody(vid) : buildV5Body(vid).toString().getBytes(UTF8);
+            byte[] gz = gzip(body);
+            String url = official
+                    ? "https://reading.snssdk.com/novel/player/video_model/v1/"
+                    : PlaybackSignerV5.base();
+            PlaybackSignerV5.Request req = PlaybackSignerV5.sign(url, profile, gz);
+            Request.Builder rb = new Request.Builder().url(req.url);
+            for (Map.Entry<String, String> e : req.headers.entrySet()) {
+                rb.header(e.getKey(), e.getValue());
+            }
+            String cookie = DeviceRegister.cookieHeader();
+            if (!cookie.isEmpty()) rb.header("Cookie", cookie);
+            rb.post(RequestBody.create(JSON_TYPE, gz));
+            try (Response resp = client.newCall(rb.build()).execute()) {
+                byte[] bytes = resp.body() == null ? new byte[0] : resp.body().bytes();
+                String head = new String(bytes, UTF8);
+                String flag = bytes.length > 0 ? "OK" : "EMPTY";
+                return variant + " http=" + resp.code() + " len=" + bytes.length + " " + flag
+                        + (bytes.length > 0 ? " head=" + head.substring(0, Math.min(50, head.length())).replace('\n', ' ') : "");
+            }
+        } catch (Throwable t) {
+            return variant + " ERR " + t.getClass().getSimpleName() + ":" + t.getMessage();
+        }
+    }
+
+    private static byte[] officialBody(String vid) throws Exception {
+        JSONObject biz = new JSONObject();
+        biz.put("detail_page_version", 0);
+        biz.put("device_level", 3);
+        biz.put("disable_digg_stat", false);
+        biz.put("disable_video_relate_book", false);
+        biz.put("from_video_id", "");
+        biz.put("need_all_video_definition", true);
+        biz.put("need_mp4_align", false);
+        biz.put("source", 1);
+        biz.put("use_os_player", false);
+        biz.put("use_server_dns", false);
+        biz.put("video_platform", 3);
+        JSONObject body = new JSONObject();
+        body.put("biz_param", biz);
+        body.put("content_type", 1004);
+        body.put("video_id", vid);
+        return body.toString().getBytes(UTF8);
+    }
+
     private JSONObject playbackPostV5(String url, byte[] gzipPayload) throws Exception {
         // query 档案与「本机已注册身份」同源（update_64 / 25053RT47C / os 16）。
         // 优先走 HGTV 1.3.9.3 dex 的原生签名栈（medusa 状态机/field 16/21/22/24

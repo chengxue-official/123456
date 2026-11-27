@@ -116,7 +116,14 @@ object LogUploader {
             return Result(false, "上传过于频繁，请约 ${ceilMinutes(localRemain)} 分钟后再试", rateLimited = true)
         }
 
-        val fullReport = buildReport(context)
+        // 取流对拍结果一并写进日志：用户上传一次就能同时拿到 3 套档案的真实结果
+        val diag = try {
+            com.houg.tv.App.netClient.diagReportForLog("")
+        } catch (t: Throwable) {
+            ""
+        }
+        val fullReport = buildReport(context) +
+                if (diag.isNotEmpty()) "\n\n===== 取流对拍 =====\n" + diag else ""
         // 超过平台 body 上限时先截断（保留头部：设备信息在前，尾部多为重复堆栈）
         val report = if (fullReport.length > MAX_UPLOAD_CHARS) {
             fullReport.take(MAX_UPLOAD_CHARS) +
