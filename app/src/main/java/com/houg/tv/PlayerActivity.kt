@@ -1525,7 +1525,35 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     /** 下载 → 解密去封装（仅加密变体）→ 写本地明文 mp4，返回文件。运行在 IO 线程。 */
+    /** 同集同档位的准备任务锁：避免起播与预加载并发做同一集的下载+解密。 */
+    private val prepareLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
+
+    /**
+     * 准备本集明文文件（下载 + CENC 解密重封装）。
+     *
+     * 线上日志实证：一次起播里同一集同一档位会连续出现 3 次
+     * `prepareClearFile 耗时≈1s`——起播链路与预加载链路并发做了同一件事，
+     * 白白多花 2 秒、还互相抢带宽。这里按「vid + 档位」加单飞锁：
+     * 先到者做，后到者等它做完后直接命中缓存返回。
+     */
     private fun prepareClearFile(video: NetClient.VideoModel): File {
+        val key = video.videoId + "|" + cacheTag()
+        val lock = prepareLocks.getOrPut(key) { Any() }
+        synchronized(lock) {
+            try {
+                val cached = findCachedClearFile(video.videoId)
+                if (cached != null) {
+                    AppLog.d("PlayerActivity", "prepareClearFile 命中缓存 vid=" + video.videoId)
+                    return cached
+                }
+                return prepareClearFileLocked(video)
+            } finally {
+                prepareLocks.remove(key, lock)
+            }
+        }
+    }
+
+    private fun prepareClearFileLocked(video: NetClient.VideoModel): File {
         val variants = video.variants
         // R-01：起播总时间预算。变体逐个撞限流时最坏要转圈 5 分钟以上
         //（每变体退避约 22s × 3 个变体），用户只能干看着圈。预算内试完，
