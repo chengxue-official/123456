@@ -97,8 +97,114 @@ public final class CencMp4Downloader {
         throw retryableErr;
     }
 
+    /** 分段并发下载的最小体积：小文件并发反而更慢。 */
+    private static final long PARALLEL_MIN_BYTES = 6L * 1024 * 1024;
+    /** 并发连接数：CDN 单连接常被限速 2~4MB/s，多路并发显著提速。 */
+    private static final int PARALLEL_THREADS = 4;
+
+    /**
+     * 分段并发下载（HTTP Range）。
+     *
+     * 起播慢的大头是整集下载：线上实测单连接约 3MB/s，一集 40MB 要 10s+，
+     * 再加 CENC 解密重封装，起播 13~19 秒。CDN 支持 Range，多连接并发能明显提速。
+     *
+     * 安全保证：任一段失败、或服务端不支持 Range（回 200 而非 206），立即放弃并发、
+     * 删掉半成品并回到单连接逻辑，不会把「下载失败」的风险带进来。
+     */
+    private boolean tryParallelDownload(String url, File out) {
+        long total = -1L;
+        try {
+            Request probe = new Request.Builder().url(url)
+                    .header("User-Agent", XGorgon.USER_AGENT)
+                    .header("Referer", REFERER)
+                    .header("Range", "bytes=0-0")
+                    .build();
+            try (Response r = client.newCall(probe).execute()) {
+                if (r.code() != 206) return false;
+                String cr = r.header("Content-Range");
+                if (cr != null) {
+                    int slash = cr.lastIndexOf('/');
+                    if (slash > 0) total = Long.parseLong(cr.substring(slash + 1).trim());
+                }
+            }
+        } catch (Exception e) {
+            return false;
+        }
+        if (total < PARALLEL_MIN_BYTES) return false;
+
+        final long len = total;
+        final int threads = PARALLEL_THREADS;
+        final long seg = (len + threads - 1) / threads;
+        final java.util.concurrent.atomic.AtomicReference<Exception> err =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        final java.util.concurrent.CountDownLatch latch =
+                new java.util.concurrent.CountDownLatch(threads);
+        java.io.RandomAccessFile raf = null;
+        try {
+            raf = new java.io.RandomAccessFile(out, "rw");
+            raf.setLength(len);
+            final java.io.RandomAccessFile file = raf;
+            for (int i = 0; i < threads; i++) {
+                final long start = i * seg;
+                final long end = Math.min(len - 1, start + seg - 1);
+                new Thread(() -> {
+                    try {
+                        if (err.get() != null) return;
+                        Request req = new Request.Builder().url(url)
+                                .header("User-Agent", XGorgon.USER_AGENT)
+                                .header("Referer", REFERER)
+                                .header("Range", "bytes=" + start + "-" + end)
+                                .build();
+                        try (Response resp = client.newCall(req).execute()) {
+                            if (resp.code() != 206 || resp.body() == null) {
+                                throw new Exception("分段下载 HTTP " + resp.code());
+                            }
+                            try (InputStream in = resp.body().byteStream()) {
+                                byte[] buf = new byte[COPY_BUFFER];
+                                long pos = start;
+                                int n;
+                                while ((n = in.read(buf)) != -1) {
+                                    synchronized (file) {
+                                        file.seek(pos);
+                                        file.write(buf, 0, n);
+                                    }
+                                    pos += n;
+                                }
+                                if (pos != end + 1) throw new Exception("分段长度不符");
+                            }
+                        }
+                    } catch (Exception e) {
+                        err.compareAndSet(null, e);
+                    } finally {
+                        latch.countDown();
+                    }
+                }, "hg-dl-" + i).start();
+            }
+            latch.await();
+        } catch (Exception e) {
+            err.compareAndSet(null, e);
+        } finally {
+            try {
+                if (raf != null) raf.close();
+            } catch (Exception ignore) {
+            }
+        }
+        if (err.get() != null) {
+            try {
+                out.delete();
+            } catch (Exception ignore) {
+            }
+            return false;
+        }
+        return out.length() == len;
+    }
+
     /** 下载单个地址到文件：64KB 分块落盘，不整集进内存。 */
     private void downloadToFile(String url, File out) throws Exception {
+        // 大文件先试分段并发（支持 Range 才有意义），失败自动回退单连接
+        if (tryParallelDownload(url, out)) {
+            return;
+        }
         Request.Builder rb = new Request.Builder().url(url)
                 .header("User-Agent", XGorgon.USER_AGENT)
                 .header("Referer", REFERER)
