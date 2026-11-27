@@ -35,9 +35,7 @@ object EndpointConfig {
      * 浠ュ悗鍔?鎹㈡簮鍙敼杩欎釜鍒楄〃锛堥渶闅忕増鍙戝竷锛夈€?     */
     private val remoteUrls = listOf(
         "https://www.hongguo.kdns.fr/endpoints.json",
-        "https://cdn.jsdelivr.net/gh/chengxue-official/hongguoA@main/public/endpoints.json",
-        "https://gitee.com/chengxue/hongguoA/raw/main/public/endpoints.json",
-        "https://hongguo.kdns.fr/endpoints.json"
+        "https://cdn.jsdelivr.net/gh/chengxue-official/hongguoA@main/public/endpoints.json"
     )
 
     data class Spec(val key: String, val hostGroup: String, val path: String, val method: String)

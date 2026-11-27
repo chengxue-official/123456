@@ -2110,8 +2110,11 @@ public final class NetClient {
         // 机型档案改用本机真实 Build 值（与 HGTV 的 device-profile 同源）：
         // 线上 11-24 前用假 Redmi 档案能过，新网关按「设备指纹真实性」判定，
         // 假档案会拿到 200 空 body（模拟器对照实验：HGTV 真机档案可播）。
-        profile.put("device_type", android.os.Build.MODEL);
-        profile.put("device_brand", android.os.Build.BRAND);
+        // 型号/品牌可能是中文（如投影仪「小明xmM3101智能投影仪」）→ 必须先净化成 ASCII，
+        // 否则 User-Agent 里出现非 ASCII 字符，OkHttp 在请求发出前就抛异常，
+        // 上层回退旧路径 → 恒 200 空 body → 播放失败（线上 2.2.9 事故）。
+        profile.put("device_type", PlaybackSignerV5.ascii(android.os.Build.MODEL, "25053RT47C"));
+        profile.put("device_brand", PlaybackSignerV5.ascii(android.os.Build.BRAND, "Redmi"));
         profile.put("os_version", android.os.Build.VERSION.RELEASE);
         profile.put("os_api", String.valueOf(android.os.Build.VERSION.SDK_INT));
         String display = android.os.Build.DISPLAY == null ? "" : android.os.Build.DISPLAY.trim();

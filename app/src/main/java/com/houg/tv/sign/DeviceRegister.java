@@ -744,7 +744,7 @@ public final class DeviceRegister {
 
     private static String romVersion() {
         try {
-            return Build.MODEL + " release-keys";
+            return PlaybackSignerV5.ascii(Build.MODEL, "25053RT47C") + " release-keys";
         } catch (Throwable t) {
             return "release-keys";
         }

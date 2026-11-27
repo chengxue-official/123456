@@ -49,11 +49,36 @@ public final class PlaybackSignerV5 {
                     + "QuicVersion:21ac1950 2025-11-18)";
 
     /** v5 播放器 UA：按请求档案生成，与注册/其它业务请求保持同一台「设备」。 */
+    /**
+     * 把任意字符串净化成 HTTP 头安全的 ASCII 值。
+     *
+     * 线上事故（2.2.9）：投影仪型号「小明xmM3101智能投影仪」含中文，直接拼进
+     * User-Agent 后 OkHttp 在**请求发出前**就抛 IllegalArgumentException
+     * （unexpected char 0x5C0F），上层回退旧取流路径 → 旧路径恒 200 空 body → 播放失败。
+     * 这里只保留 ASCII 可见字符与安全符号，剔空则退回默认机型。
+     */
+    public static String ascii(String raw, String fallback) {
+        if (raw == null) return fallback;
+        StringBuilder sb = new StringBuilder(raw.length());
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (c >= 0x20 && c <= 0x7E) sb.append(c);
+        }
+        String out = sb.toString().replaceAll("[^A-Za-z0-9._\\- ]", " ")
+                .replaceAll("\\s{2,}", " ").trim();
+        int st = 0, en = out.length();
+        while (st < en && !Character.isLetterOrDigit(out.charAt(st))) st++;
+        while (en > st && !Character.isLetterOrDigit(out.charAt(en - 1))) en--;
+        out = out.substring(st, en).trim();
+        return out.isEmpty() ? fallback : out;
+    }
+
     public static String ua(Map<String, String> profile) {
-        return UA_TEMPLATE
+        return ascii(UA_TEMPLATE
                 .replace("%VC%", str(profile, "version_code", "74332"))
                 .replace("%OS%", str(profile, "os_version", "16"))
-                .replace("%MODEL%", str(profile, "device_type", "25053RT47C"));
+                .replace("%MODEL%", str(profile, "device_type", "25053RT47C")),
+                "com.phoenix.read/74332 (Linux; U; Android 16; zh_CN; 25053RT47C)");
     }
 
     private static String str(Map<String, String> m, String key, String def) {
