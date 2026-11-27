@@ -328,7 +328,9 @@ object UpdateChecker {
         val tmp = File(dir, "update.apk.part")
         val target = File(dir, "h\u006fnggu\u006f-${remote.versionName}.apk")
         val name = remote.apkUrl.substringAfterLast('/')
+        // 下载顺序很关键：Gitee 镜像实测 1.1MB/s，EdgeOne 最差 31KB/s，先走镜像
         val candidates = LinkedHashSet<String>().apply {
+            add(GITEE_MIRROR.trimEnd('/') + "/" + name)
             add(remote.apkUrl)
             for (h in sources(context)) add(originOf(h).trimEnd('/') + "/" + name)
         }
