@@ -26,10 +26,10 @@ import java.util.Map;
 public final class PlaybackSigner {
 
     public static final String VIDEO_UA =
-            "com.phoenix.read/74332 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; "
+            "com.phoenix.read/74732 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; "
                     + "Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)";
     public static final String APP_UA =
-            "com.phoenix.read/74332 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3)";
+            "com.phoenix.read/74732 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3)";
 
     /** 播放器版本档案（27 字段，顺序即签名顺序，绝不能改成 TreeMap）。 */
     public static LinkedHashMap<String, String> defaultDeviceProfile() {
@@ -40,8 +40,8 @@ public final class PlaybackSigner {
         m.put("channel", "69310258a");
         m.put("aid", "8662");
         m.put("app_name", "novelread");
-        m.put("version_code", "74332");
-        m.put("version_name", "7.4.3.32");
+        m.put("version_code", "74732");
+        m.put("version_name", "7.4.7.32");
         m.put("device_platform", "android");
         m.put("os", "android");
         m.put("ssmix", "a");
@@ -50,13 +50,13 @@ public final class PlaybackSigner {
         m.put("language", "zh");
         m.put("os_api", "36");
         m.put("os_version", "16");
-        m.put("manifest_version_code", "74332");
+        m.put("manifest_version_code", "74732");
         m.put("resolution", "1280*2772");
         m.put("dpi", "520");
-        m.put("update_version_code", "74332");
+        m.put("update_version_code", "74732");
         m.put("host_abi", "arm64-v8a");
         m.put("dragon_device_type", "phone");
-        m.put("pv_player", "74332");
+        m.put("pv_player", "74732");
         m.put("compliance_status", "0");
         m.put("need_personal_recommend", "1");
         m.put("player_so_load", "1");

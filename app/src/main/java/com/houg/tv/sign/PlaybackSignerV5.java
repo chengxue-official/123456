@@ -75,10 +75,10 @@ public final class PlaybackSignerV5 {
 
     public static String ua(Map<String, String> profile) {
         return ascii(UA_TEMPLATE
-                .replace("%VC%", str(profile, "version_code", "74332"))
+                .replace("%VC%", str(profile, "version_code", "74732"))
                 .replace("%OS%", str(profile, "os_version", "16"))
                 .replace("%MODEL%", str(profile, "device_type", "25053RT47C")),
-                "com.phoenix.read/74332 (Linux; U; Android 16; zh_CN; 25053RT47C)");
+                "com.phoenix.read/74732 (Linux; U; Android 16; zh_CN; 25053RT47C)");
     }
 
     private static String str(Map<String, String> m, String key, String def) {
@@ -784,7 +784,7 @@ public final class PlaybackSignerV5 {
         byte[] queryBytes = query.getBytes(StandardCharsets.UTF_8);
         byte[] querySm3 = sm3(queryBytes);
         byte[] f13 = hashF13(querySm3, bodyMd5, khronos);
-        String version = versionName == null || versionName.isEmpty() ? "7.4.3.32" : versionName;
+        String version = versionName == null || versionName.isEmpty() ? "7.4.7.32" : versionName;
         byte[] nonceBytes = new byte[18];
         for (int i = 0; i < 18; i++) {
             nonceBytes[i] = (byte) (randomSource.next32() & 255);

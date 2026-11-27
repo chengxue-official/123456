@@ -171,7 +171,7 @@ public final class TncHostSource {
         StringBuilder sb = new StringBuilder();
         sb.append("app=1&settings_time=0");
         sb.append("&_rticket=").append(System.currentTimeMillis());
-        sb.append("&aid=8662&app_name=novelread&version_code=74332&version_name=7.4.3.32");
+        sb.append("&aid=8662&app_name=novelread&version_code=74732&version_name=7.4.7.32");
         sb.append("&device_platform=android&os=android&channel=update_64&language=zh");
         sb.append("&ac=wifi&ssmix=a");
         String dev = DeviceRegister.registered() ? DeviceRegister.deviceId() : "";
