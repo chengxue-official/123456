@@ -88,6 +88,11 @@ class PlayerActivity : AppCompatActivity() {
     private var epList: List<Int> = emptyList()
     /** 当前位置下标（0-based）：在 vidList/epList 间移动；显示集号取 epList[位置] */
     private var currentPos = 0
+
+    /** 首播降档：AUTO 档无缓存时先用 720P 起播，后台备好高档再无缝切回。0=不降档 */
+    private var startupCapHeight = 0
+    /** 本集是否已经降档起播过（每集只降一次） */
+    private var startupCapped = false
     /**
      * 播放器上当前挂着的 MediaItem 属于哪个位置（-1 = 还没起播过 / 已释放）。
      * 切集时先改 currentPos 再换片，prepare 前播放器里仍是上一集的内容；
@@ -422,6 +427,7 @@ class PlayerActivity : AppCompatActivity() {
                     releaseSwitchGuard()
                     // 流播已成功打开：之后即使断流也不再自动回退下载（回退会从头重播）
                     streamReady = true
+                    maybeStartStartupBoost()
                     // 解码就绪：转圈可以收了（首帧通常紧随其后；这里兜住个别
                     // 机型首帧回调缺失的情况，避免转圈盖在画面上）
                     hideLoading()
@@ -1229,6 +1235,11 @@ class PlayerActivity : AppCompatActivity() {
                             + " 依据=" + (if (decoderSoft) "手动软解" else "本集解码器为软解")
                             + " vid=" + vid)
                 }
+                // 首播降档决策：AUTO + 无缓存 + 本集未降过 → 先 720P 起播
+                if (!startupCapped && qualityIndex == QUALITY_AUTO
+                        && findCachedClearFile(vidList.getOrNull(currentPos) ?: "") == null) {
+                    startupCapHeight = STARTUP_CAP_HEIGHT
+                }
                 val video = withContext(Dispatchers.IO) {
                     // 显式选档（非「自动」）时允许试本机探测判为不可用的编码：
                     // 有些 ROM 谎报/查询失败会把 1080P 电视判成「无 HEVC」，
@@ -1329,7 +1340,10 @@ class PlayerActivity : AppCompatActivity() {
             softTierDown(from)
         }
         // 画面停滞自适应降档优先于其它上限（取更小者）
-        return if (stallCapHeight > 0 && (soft <= 0 || stallCapHeight < soft)) stallCapHeight else soft
+        val capped = if (stallCapHeight > 0 && (soft <= 0 || stallCapHeight < soft)) stallCapHeight else soft
+        // 首播降档：临时压到 720P，等后台备好高档再切回（见 maybeStartStartupBoost）
+        if (startupCapHeight > 0 && (capped <= 0 || startupCapHeight < capped)) return startupCapHeight
+        return capped
     }
 
     /** 未经软解降档的常规上限，语义与旧版一致。 */
@@ -2440,6 +2454,36 @@ class PlayerActivity : AppCompatActivity() {
      * 「同一部的下一集」，对换剧毫无帮助——线上日志里每次换剧都是现场下载+解密
      * （8~17MB，1~4 秒），用户体感就是「加载慢」。
      */
+    /**
+     * 首播降档后的后台升级：备好当前集的高档，再按进度切过去。
+     *
+     * 加密片源必须整集下载+解密重封装才能播（一集 28~40MB，3~4MB/s 下 8~13 秒）。
+     * 先用 720P（体积约 1/3）把画面顶上，用户 3~5 秒内就能看；同时后台下 1080P，
+     * 备好后按当前进度切回（切换只读本地文件，约 0.3~1 秒）。
+     */
+    private fun maybeStartStartupBoost() {
+        if (startupCapHeight <= 0 || startupCapped) return
+        startupCapped = true
+        val vid = vidList.getOrNull(currentPos) ?: return
+        val target = normalMaxHeight()
+        scope.launch {
+            try {
+                val video = withContext(Dispatchers.IO) {
+                    App.netClient.videoModel(vid, target, qualityIndex != QUALITY_AUTO)
+                }
+                val file = withContext(Dispatchers.IO) { prepareClearFile(video) }
+                if (!file.exists() || file.length() <= 0L) return@launch
+                if (vidList.getOrNull(currentPos) != vid) return@launch
+                if (isFinishing || isDestroyed) return@launch
+                startupCapHeight = 0
+                AppLog.d("PlayerActivity", "首播升级 720P→" + target + "P 就绪，切回高清 vid=" + vid)
+                replayCurrentEpisode()
+            } catch (e: Exception) {
+                AppLog.d("PlayerActivity", "首播升级失败（保持低档）：" + (e.message ?: ""))
+            }
+        }
+    }
+
     private fun prefetchFeedNext() {
         val ids = feedIds ?: return
         if (prefetchRunning || streamingCurrent) return
@@ -3964,6 +4008,9 @@ class PlayerActivity : AppCompatActivity() {
     companion object {
         /** AV1（bytevc2）集「有声黑屏」的判定时限，见 [armAv1FirstFrameWatch]。 */
         private const val AV1_FIRST_FRAME_TIMEOUT_MS = 8000L
+
+        /** 首播降档档位（像素高）：720P 体积约为 1080P 的 1/3。 */
+        private const val STARTUP_CAP_HEIGHT = 720
 
         /**
          * 播放停滞判定阈值（见 [checkVideoStall]）：播放中超过这么久没有新帧渲染、
