@@ -41,6 +41,15 @@ class MainActivity : AppCompatActivity() {
         super.attachBaseContext(UiScale.warp(newBase))
     }
 
+    /** 刷短剧游标（跨会话续翻，避免每次从第一页取到同一批） */
+    private val PREF_FEED = "houg_feed"
+    private val KEY_FEED_OFFSET = "offset"
+    private val KEY_FEED_SESSION = "session"
+    /** 一次起刷最多凑多少部 */
+    private val FEED_TARGET_SIZE = 8
+    /** 最多翻几页（防止一页页翻太久） */
+    private val FEED_MAX_PAGES = 4
+
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private lateinit var adapter: HomeAdapter
     private lateinit var recycler: RecyclerView
@@ -311,45 +320,71 @@ class MainActivity : AppCompatActivity() {
         progress.visibility = View.VISIBLE
         scope.launch {
             try {
-                val page = withContext(Dispatchers.IO) {
-                    // 推荐流：按设置页「刷短剧偏好」过滤类型 + 服务端 hot_score 排序
-                    App.netClient.recommend(
-                        0, "", SettingsActivity.feedGenreKey(this@MainActivity))
-                }
-                val dramas = page.dramas.filter { it.id.isNotEmpty() }
-                if (dramas.isEmpty()) {
-                    Toast.makeText(this@MainActivity, R.string.feed_empty, Toast.LENGTH_SHORT).show()
-                    return@launch
-                }
-                // 少推已经看过的：历史里有记录的剧先剔掉；剔完太少（<3 部）就保留全集
+                // 游标持久化：每次都从第 1 页取的话，取到的永远是同一批（早已刷过的），
+                // 过滤后剩不下新剧，就会一路走到「全是历史」的兜底。这里接着上次的位置往后翻。
+                val prefs = getSharedPreferences(PREF_FEED, MODE_PRIVATE)
                 val watched = runCatching {
                     App.watchHistory.list().map { it.seriesId }.toSet()
                 }.getOrDefault(emptySet())
-                val unseen = dramas.filter { it.id !in watched }
-                val pool = if (unseen.size >= 3) unseen else dramas
-                AppLog.d("MainActivity", "刷短剧候选 " + dramas.size + " 部，其中未看过 "
-                        + unseen.size + " 部（历史 " + watched.size + " 部）")
+                val genre = SettingsActivity.feedGenreKey(this@MainActivity)
+
+                val picked = withContext(Dispatchers.IO) {
+                    var off = prefs.getInt(KEY_FEED_OFFSET, 0)
+                    var sess = prefs.getString(KEY_FEED_SESSION, "").orEmpty()
+                    val collected = ArrayList<NetClient.Drama>()
+                    var fallback: NetClient.Drama? = null
+                    var pages = 0
+                    var hasMore = true
+                    while (collected.size < FEED_TARGET_SIZE && pages < FEED_MAX_PAGES && hasMore) {
+                        val page = App.netClient.recommend(off, sess, genre)
+                        pages++
+                        hasMore = page.hasMore
+                        off = page.nextOffset
+                        sess = page.sessionId
+                        val batch = page.dramas.filter { it.id.isNotEmpty() }
+                        if (fallback == null) fallback = batch.firstOrNull()
+                        // 只收没看过的；已看过的丢掉（不再用「不够 3 部就保留全集」的兜底）
+                        for (d in batch) {
+                            if (d.id in watched) continue
+                            if (collected.any { it.id == d.id }) continue
+                            collected.add(d)
+                        }
+                    }
+                    prefs.edit()
+                        .putInt(KEY_FEED_OFFSET, off)
+                        .putString(KEY_FEED_SESSION, sess)
+                        .apply()
+                    AppLog.d("MainActivity", "刷短剧候选 未看过=" + collected.size
+                            + "（翻页 " + pages + " 次，历史 " + watched.size + " 部）")
+                    if (collected.isEmpty()) listOfNotNull(fallback) else collected
+                }
+
+                if (picked.isEmpty()) {
+                    Toast.makeText(this@MainActivity, R.string.feed_empty, Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
                 // 口味记忆：命中用户常刷标签的排前面（只改顺序）
                 val topTags = com.houg.tv.data.FeedTaste.top(this@MainActivity)
-                val picked = pool.shuffled()
+                val ordered = picked.shuffled()
                     .sortedByDescending { d -> d.tags.count { it in topTags } }
                 startActivity(
                     Intent(this@MainActivity, PlayerActivity::class.java)
                         .putStringArrayListExtra(
-                            PlayerActivity.EXTRA_FEED_IDS, ArrayList(picked.map { it.id }))
+                            PlayerActivity.EXTRA_FEED_IDS, ArrayList(ordered.map { it.id }))
                         .putStringArrayListExtra(
-                            PlayerActivity.EXTRA_FEED_TITLES, ArrayList(picked.map { it.title }))
+                            PlayerActivity.EXTRA_FEED_TITLES, ArrayList(ordered.map { it.title }))
                         .putStringArrayListExtra(
-                            PlayerActivity.EXTRA_FEED_COVERS, ArrayList(picked.map { it.cover }))
+                            PlayerActivity.EXTRA_FEED_COVERS, ArrayList(ordered.map { it.cover }))
                         .putStringArrayListExtra(
                             PlayerActivity.EXTRA_FEED_TAGS,
-                            ArrayList(picked.map { it.tags.joinToString("|") }))
+                            ArrayList(ordered.map { it.tags.joinToString("|") }))
                         .putExtra(PlayerActivity.EXTRA_FEED_INDEX, 0)
-                        // 翻页游标跟着首页这次请求走，feed 播完存量后接着要下一页
-                        .putExtra(PlayerActivity.EXTRA_FEED_OFFSET, page.nextOffset)
-                        .putExtra(PlayerActivity.EXTRA_FEED_SESSION, page.sessionId)
+                        .putExtra(PlayerActivity.EXTRA_FEED_OFFSET, prefs.getInt(KEY_FEED_OFFSET, 0))
+                        .putExtra(PlayerActivity.EXTRA_FEED_SESSION,
+                            prefs.getString(KEY_FEED_SESSION, "").orEmpty())
                 )
             } catch (e: Throwable) {
+                AppLog.e("MainActivity", "刷短剧起刷失败", e)
                 Toast.makeText(this@MainActivity, R.string.feed_load_failed, Toast.LENGTH_SHORT).show()
             } finally {
                 feedOpening = false
