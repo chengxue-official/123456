@@ -1319,6 +1319,10 @@ class PlayerActivity : AppCompatActivity() {
                             // “Failed to allocate a 27994450 byte allocation”）。
                             // 解密已改流式，这里主要兜软解/系统整体内存紧张。
                             isMemoryError(e) -> "设备内存不足，播放失败。请清理后台应用后重试，或切换到较低清晰度"
+                            // DNS 解析失败别把 Java 原始异常甩给用户
+                            e.message?.contains("无法解析主机") == true
+                                    || e.message?.contains("UnknownHost") == true ->
+                                "网络异常：域名解析失败，请检查电视的网络或 DNS 设置后重试"
                             else -> e.message ?: getString(R.string.load_failed)
                         },
                         canRetry = limited || e.message == NetClient.DEVICE_IDENTITY_FAILED_MSG)

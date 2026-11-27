@@ -1809,35 +1809,33 @@ public final class NetClient {
                     AppLog.INSTANCE.e(TAG, "v5 body 构建失败（继续 v1 路径）", e);
                 }
                 if (v5Body != null) {
-                    try {
-                        // 配置里可以同时声明多条播放路由（v5_playback / v5_playback_*），
-                        // 依次尝试：官方换路径时只改 endpoints.json，不用重新发版。
-                        for (String v5Url : EndpointConfig.INSTANCE.playbackUrls(v5PlayerUrl())) {
-                            JSONObject json = null;
-                            try {
-                                json = playbackPostV5(v5Url, v5Body);
-                            } catch (Exception e) {
-                                lastError = e;
-                                AppLog.INSTANCE.d(TAG, "v5 路由失败 " + v5Url + ": " + (e.getMessage() == null ? "" : e.getMessage()));
-                                continue;
-                            }
-                            if (json == null) {
-                                emptyBodyCount++;
-                                lastError = new Exception("播放接口空响应");
-                                continue;
-                            }
-                            JSONObject model = extractVideoModel(json, vid);
-                            if (model != null) {
-                                AppLog.INSTANCE.d(TAG, "取流成功(v5) 路由=" + v5Url
-                                        + " 空body=" + emptyBodyCount + " vid=" + vid);
-                                DeviceRegister.maybeRefillBackupsAsync(client);
-                                return model;
-                            }
-                            lastError = new Exception("HG播放信息为空");
+                    // 配置里可以同时声明多条播放路由（v5_playback / v5_playback_*），
+                    // 依次尝试：官方换路径时只改 endpoints.json，不用重新发版。
+                    for (String v5Url : EndpointConfig.INSTANCE.playbackUrls(v5PlayerUrl())) {
+                        JSONObject json = null;
+                        try {
+                            json = playbackPostV5(v5Url, v5Body);
+                        } catch (Exception e) {
+                            lastError = e;
+                            networkErrorCount++;
+                            reportHostFailure(v5Url, e);
+                            AppLog.INSTANCE.d(TAG, "v5 路由失败 " + v5Url + ": "
+                                    + (e.getMessage() == null ? "" : e.getMessage()));
+                            continue;
                         }
-                    } catch (Exception e) {
-                        lastError = e;
-                        networkErrorCount++;
+                        if (json == null) {
+                            emptyBodyCount++;
+                            lastError = new Exception("播放接口空响应");
+                            continue;
+                        }
+                        JSONObject model = extractVideoModel(json, vid);
+                        if (model != null) {
+                            AppLog.INSTANCE.d(TAG, "取流成功(v5) 路由=" + v5Url
+                                    + " 空body=" + emptyBodyCount + " vid=" + vid);
+                            DeviceRegister.maybeRefillBackupsAsync(client);
+                            return model;
+                        }
+                        lastError = new Exception("HG播放信息为空");
                     }
                 }
             }
@@ -2414,6 +2412,19 @@ public final class NetClient {
      * 那会在本集取不到时拿到<b>别的集</b>的播放地址，导致用户点第 5 集播出第 1 集。
      * 取不到就老实返回 null，由上层报错。
      */
+    /** 解析/连接失败时把主机报给主机池，后续请求优先换一家。 */
+    private static void reportHostFailure(String url, Exception e) {
+        if (url == null || e == null) return;
+        if (!(e instanceof java.net.UnknownHostException)
+                && !(e instanceof java.net.ConnectException)
+                && !(e instanceof java.net.SocketTimeoutException)) return;
+        try {
+            String h = android.net.Uri.parse(url).getHost();
+            if (h != null && !h.isEmpty()) HostPool.reportFailure(h);
+        } catch (Throwable ignore) {
+        }
+    }
+
     private JSONObject extractVideoModel(JSONObject root, String vid) {
         if (root == null) return null;
         JSONObject data = root.optJSONObject("data");
