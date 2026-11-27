@@ -1,6 +1,6 @@
 {
   "_comment": "接口配置（测试版）。接口炸了只改这里，不动代码。数据来源：官方 7.4.5.32 静态+运行时提取。",
-  "version": 5,
+  "version": 6,
   "generated_from": "novelread 7.4.5.32 (74532)",
   "hosts": {
     "api_primary": [
@@ -56,6 +56,11 @@
       "host": "settings",
       "path": "/service/settings/v3/",
       "method": "GET"
+    },
+    "v5_playback_detail_preload": {
+      "host": "api_primary",
+      "path": "/novel/player/multi_video_detail/preload/v1",
+      "method": "POST"
     }
   },
   "web_paths": {

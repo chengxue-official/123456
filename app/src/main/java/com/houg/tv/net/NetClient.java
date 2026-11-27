@@ -1793,14 +1793,26 @@ public final class NetClient {
                 }
                 if (v5Body != null) {
                     try {
-                        JSONObject json = playbackPostV5(v5PlayerUrl(), v5Body);
-                        if (json == null) {
-                            emptyBodyCount++;
-                            lastError = new Exception("播放接口空响应");
-                        } else {
+                        // 配置里可以同时声明多条播放路由（v5_playback / v5_playback_*），
+                        // 依次尝试：官方换路径时只改 endpoints.json，不用重新发版。
+                        for (String v5Url : EndpointConfig.INSTANCE.playbackUrls(v5PlayerUrl())) {
+                            JSONObject json = null;
+                            try {
+                                json = playbackPostV5(v5Url, v5Body);
+                            } catch (Exception e) {
+                                lastError = e;
+                                AppLog.INSTANCE.d(TAG, "v5 路由失败 " + v5Url + ": " + (e.getMessage() == null ? "" : e.getMessage()));
+                                continue;
+                            }
+                            if (json == null) {
+                                emptyBodyCount++;
+                                lastError = new Exception("播放接口空响应");
+                                continue;
+                            }
                             JSONObject model = extractVideoModel(json, vid);
                             if (model != null) {
-                                AppLog.INSTANCE.d(TAG, "取流成功(v5) 空body=" + emptyBodyCount + " vid=" + vid);
+                                AppLog.INSTANCE.d(TAG, "取流成功(v5) 路由=" + v5Url
+                                        + " 空body=" + emptyBodyCount + " vid=" + vid);
                                 DeviceRegister.maybeRefillBackupsAsync(client);
                                 return model;
                             }

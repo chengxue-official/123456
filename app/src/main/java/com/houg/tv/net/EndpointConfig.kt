@@ -236,6 +236,26 @@ object EndpointConfig {
         return cands[nextIndex(key, cands.size)]
     }
 
+    /**
+     * 取流的多条候选地址：主路径 v5_playback + 所有 v5_playback_* 备选（按 key 排序）。
+     *
+     * 这样「官方又换路由」只需在 endpoints.json 里加一条键，客户端会依次尝试，
+     * 不用再发版改代码。官方包不同版本用过下面几条：
+     *   /novel/player/video_model/v1/                （model-direct，当前存活）
+     *   /novel/player/multi_video_model/v1/
+     *   /novel/player/multi_video_model/player/v1
+     *   /novel/player/multi_video_detail/preload/v1  （1.3.9.2 里出现）
+     */
+    fun playbackUrls(fallback: String): List<String> {
+        val out = LinkedHashSet<String>()
+        out.addAll(candidates("v5_playback"))
+        for (k in endpoints.keys.sorted()) {
+            if (k != "v5_playback" && k.startsWith("v5_playback_")) out.addAll(candidates(k))
+        }
+        if (out.isEmpty()) out.add(fallback)
+        return out.toList()
+    }
+
     fun reportFailure(key: String) {
         advance(key, candidates(key).size)
     }
