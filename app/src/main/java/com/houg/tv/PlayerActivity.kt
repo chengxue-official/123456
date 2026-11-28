@@ -296,6 +296,10 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
     private lateinit var progress: View
+    /** 加载指示器外层（含文案）：电视 ROM 上 ProgressBar 的动画常不跑，只看得到一个白块 */
+    private lateinit var progressBox: View
+    private lateinit var progressText: android.widget.TextView
+    private var spinAnimator: android.animation.ObjectAnimator? = null
     private lateinit var errorPanel: View
     private lateinit var errorText: TextView
     /** 失败提示上的「重试」：实际是换新设备身份后重播（见 retryWithNewIdentity）。 */
@@ -427,7 +431,11 @@ class PlayerActivity : AppCompatActivity() {
                     releaseSwitchGuard()
                     // 流播已成功打开：之后即使断流也不再自动回退下载（回退会从头重播）
                     streamReady = true
-                    maybeStartStartupBoost()
+                    try {
+                        maybeStartStartupBoost()
+                    } catch (t: Throwable) {
+                        AppLog.e("PlayerActivity", "首播升级逻辑异常（已忽略）", t)
+                    }
                     // 解码就绪：转圈可以收了（首帧通常紧随其后；这里兜住个别
                     // 机型首帧回调缺失的情况，避免转圈盖在画面上）
                     hideLoading()
@@ -903,6 +911,8 @@ class PlayerActivity : AppCompatActivity() {
         btnMenuTop = findViewById(R.id.btn_menu_top)
         clockText = findViewById(R.id.clock_text)
         progress = findViewById(R.id.progress)
+        progressBox = findViewById(R.id.progress_box)
+        progressText = findViewById(R.id.progress_text)
         errorPanel = findViewById(R.id.error_panel)
         errorText = findViewById(R.id.error_text)
         errorRetry = findViewById(R.id.btn_error_retry)
@@ -2486,13 +2496,19 @@ class PlayerActivity : AppCompatActivity() {
      */
     /** 当前是否 WiFi（预下载/高清升级只在 WiFi 做，移动网络省流量也更稳）。 */
     private fun isOnWifi(): Boolean {
+        // ⚠️ 必须用 API 21 可用的 API：activeNetwork / getNetworkCapabilities 是 API 23+，
+        // 在 Android 5.1 电视（HaierT962，API 22）上会抛 NoSuchMethodError——那是 Error
+        // 不是 Exception，原来的 catch(Exception) 接不住，直接闪退回主页（线上 2.3.0 事故）。
+        // 另外判定失败时按「是 WiFi」处理：宁可多做预取，也别因为探测不到就砍掉功能。
         return try {
-            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-            val net = cm.activeNetwork ?: return false
-            val caps = cm.getNetworkCapabilities(net) ?: return false
-            caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
-        } catch (e: Exception) {
-            false
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE)
+                    as? android.net.ConnectivityManager ?: return true
+            @Suppress("DEPRECATION")
+            val info = cm.activeNetworkInfo ?: return true
+            @Suppress("DEPRECATION")
+            info.isConnected && info.type == android.net.ConnectivityManager.TYPE_WIFI
+        } catch (t: Throwable) {
+            true
         }
     }
 
@@ -3498,11 +3514,22 @@ class PlayerActivity : AppCompatActivity() {
     /** loading 是否仍在等待显示（hideLoading 后置 false，防止延迟任务补弹） */
     private var loadingPending = false
     private val showLoadingRunnable = Runnable {
-        if (loadingPending) progress.visibility = View.VISIBLE
+        if (loadingPending) { progressBox.visibility = View.VISIBLE; startSpinIfNeeded() }
     }
     private val hideLoadingRunnable = Runnable { hideLoading() }
 
     /** 起播开始：延迟 [LOADING_SHOW_DELAY_MS] 再显示转圈，快的切集全程不闪。 */
+    /** 自己转：部分电视 ROM 上 ProgressBar 的 indeterminate 动画不执行，只剩一个静止白块。 */
+    private fun startSpinIfNeeded() {
+        if (spinAnimator != null) return
+        val a = android.animation.ObjectAnimator.ofFloat(progress, View.ROTATION, 0f, 360f)
+        a.duration = 900L
+        a.repeatCount = android.animation.ValueAnimator.INFINITE
+        a.interpolator = android.view.animation.LinearInterpolator()
+        a.start()
+        spinAnimator = a
+    }
+
     private fun scheduleLoading(delayMs: Long = LOADING_SHOW_DELAY_MS) {
         loadingPending = true
         handler.removeCallbacks(showLoadingRunnable)
@@ -3514,7 +3541,7 @@ class PlayerActivity : AppCompatActivity() {
         loadingPending = false
         handler.removeCallbacks(showLoadingRunnable)
         handler.removeCallbacks(hideLoadingRunnable)
-        progress.visibility = View.GONE
+        progressBox.visibility = View.GONE
     }
 
     /* ==================== 进度刷新（500ms） ==================== */
