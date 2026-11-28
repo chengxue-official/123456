@@ -911,8 +911,6 @@ class PlayerActivity : AppCompatActivity() {
         btnMenuTop = findViewById(R.id.btn_menu_top)
         clockText = findViewById(R.id.clock_text)
         progress = findViewById(R.id.progress)
-        progressBox = findViewById(R.id.progress_box)
-        progressText = findViewById(R.id.progress_text)
         errorPanel = findViewById(R.id.error_panel)
         errorText = findViewById(R.id.error_text)
         errorRetry = findViewById(R.id.btn_error_retry)
